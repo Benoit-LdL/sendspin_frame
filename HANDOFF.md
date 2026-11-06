@@ -27,6 +27,7 @@ A Raspberry Pi Zero 2 W on **Raspberry Pi OS Lite** (no desktop) that:
 ```
 sendspin_frame/__main__.py   entry point (sendspin-frame); config -> args for `sendspin daemon`
 sendspin_frame/daemon.py     FrameDaemon (subclass) + FrameRuntime (listeners -> shared state)
+sendspin_frame/screen.py     screen process (spawned): receives state, decodes images, runs the engine
 sendspin_frame/engine.py     render thread: mode choice, debounce, artwork grace, crossfades
 sendspin_frame/renderer.py   Pillow scenes: now playing, photo, clock; fonts; accent colour
 sendspin_frame/display.py    framebuffer (16/24/32 bpp, RGB565 dither, rotation, FBIOBLANK,
@@ -59,6 +60,24 @@ docs/screenshots/            README screenshots
   to it on its own.
 - Python ≥ 3.12 is required. Every dependency has aarch64 wheels except `mpris-api` and `tunit`,
   which are tiny pure-Python sdists. 64-bit Pi OS only.
+
+## First test on a real Pi (2026-11-06)
+
+- The Pi ("pi-tv", on a 4K TV) previously ran `cage -- foot ~/.local/bin/sendspin` (pipx) from
+  `~/.profile` with autologin. That was removed before installing.
+- Audio works on the default ALSA device. The framebuffer came up at 1920x1080, 16 bpp.
+- **Problem:** with rendering as a thread in the audio process, track changes caused
+  `Sync error ... ms too large` (up to 5.8 s), buffering, and ~20 s pause latency. The plain
+  `sendspin daemon` was snappy, so the GIL was the cause. MA only sends `artwork_url` (no artwork
+  images), and the full-size originals were decoded at full size.
+- **Fix:** all image work moved to a separate "spawn" process (`screen.py`), niced. The audio
+  process forwards small messages plus raw JPEG bytes. Covers are decoded with JPEG draft mode at
+  display size. **Not yet confirmed on the Pi.**
+- Also added: `now_playing.screen = "cover" | "photos"` (slideshow during music; can change at run
+  time via `FrameRuntime.set_music_screen`), `display.resolution` applied at boot by
+  `tools/apply-resolution.sh`, tty1 opened write-only (the service user can't read it).
+- Requested next: a Home Assistant toggle for `now_playing.screen` (MQTT discovery or HTTP: user
+  to choose).
 
 ## Bugs found and fixed during testing
 

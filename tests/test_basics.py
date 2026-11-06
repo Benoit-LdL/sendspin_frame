@@ -9,7 +9,7 @@ import pytest
 from PIL import Image
 
 from sendspin_frame.config import load_config
-from sendspin_frame.daemon import _trim_letterbox
+from sendspin_frame.screen import decode_artwork, trim_letterbox
 from sendspin_frame.display import FramebufferDisplay
 from sendspin_frame.photoframe import image_url
 from sendspin_frame.renderer import Renderer, ellipsize, fmt_time, wrap
@@ -84,11 +84,41 @@ def test_rgb565_conversion():
 def test_trim_letterbox():
     img = Image.new("RGB", (300, 300), (0, 0, 0))
     img.paste((180, 90, 60), (50, 0, 250, 300))
-    assert _trim_letterbox(img).size == (200, 300)
+    assert trim_letterbox(img).size == (200, 300)
     full = Image.new("RGB", (300, 300), (180, 90, 60))
-    assert _trim_letterbox(full).size == (300, 300)
+    assert trim_letterbox(full).size == (300, 300)
+
+
+def test_decode_artwork_downscales_big_covers():
+    import io
+    buf = io.BytesIO()
+    Image.new("RGB", (3000, 3000), (200, 120, 40)).save(buf, "JPEG")
+    img = decode_artwork(buf.getvalue(), 600)
+    assert img is not None and max(img.size) <= 600
+    assert decode_artwork(b"not an image", 600) is None
 
 
 def test_photoframe_url():
     assert image_url("https://c/apps/photo_frames/abc/") == "https://c/apps/photo_frames/abc/image"
     assert image_url("https://c/apps/photo_frames/abc/image") == "https://c/apps/photo_frames/abc/image"
+
+
+def test_music_screen_setting_picks_photos_or_cover():
+    from sendspin_frame.config import FrameConfig
+    from sendspin_frame.display import PngDisplay
+    from sendspin_frame.engine import Engine
+    from sendspin_frame.state import SharedState
+
+    state = SharedState()
+    engine = Engine(FrameConfig(), state, PngDisplay("/dev/null", 320, 180))
+    state.set_connection(True, "MA")
+    state.set_track(Track(title="T", artist="A"))
+    state.set_playback("playing")
+    now = time.monotonic()
+    assert engine._mode(state.snapshot(), now) == "np"
+    state.set_music_screen("photos")
+    assert engine._mode(state.snapshot(), now) == "np"  # no photo yet: keep the cover
+    state.set_photo(Photo(Image.new("RGB", (32, 18)), serial=1))
+    assert engine._mode(state.snapshot(), now) == "photo"
+    state.set_music_screen("cover")
+    assert engine._mode(state.snapshot(), now) == "np"

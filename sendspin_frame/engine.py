@@ -73,13 +73,14 @@ class Engine(threading.Thread):
     def _mode(self, snap: Snapshot, now: float) -> str:
         np_cfg = self.cfg.now_playing
         age = now - snap.playback_since
-        if snap.connected and snap.track is not None:
-            if snap.playback == "playing":
-                return "np"
-            if snap.playback == "paused" and age < np_cfg.paused_timeout:
-                return "np"
-            if snap.playback == "stopped" and age < np_cfg.stopped_timeout:
-                return "np"
+        if snap.connected and snap.track is not None and (
+            snap.playback == "playing"
+            or (snap.playback == "paused" and age < np_cfg.paused_timeout)
+            or (snap.playback == "stopped" and age < np_cfg.stopped_timeout)
+        ):
+            if snap.music_screen == "photos" and snap.photo is not None:
+                return "photo"
+            return "np"
         if _in_window(self._sleep_window):
             return "off"
         idle = self.cfg.idle.mode

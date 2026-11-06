@@ -15,12 +15,12 @@ import io
 import logging
 import time
 import urllib.parse
+from collections.abc import Callable
 
 import aiohttp
 from PIL import Image, ImageOps
 
 from .config import PhotosConfig
-from .state import Photo, SharedState
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +42,17 @@ def decode_photo(data: bytes, max_size: tuple[int, int]) -> Image.Image:
     return img
 
 
+# Called with (jpeg bytes or None, taken-at unix time, place).
+PhotoCallback = Callable[[bytes | None, float | None, str | None], None]
+
+
 class PhotoFrameFetcher:
-    def __init__(self, cfg: PhotosConfig, state: SharedState, screen: tuple[int, int]) -> None:
+    """Downloads the frame's current photo; decoding happens in the screen process."""
+
+    def __init__(self, cfg: PhotosConfig, on_photo: PhotoCallback) -> None:
         self.cfg = cfg
-        self.state = state
-        self.screen = screen
+        self.on_photo = on_photo
         self.url = image_url(cfg.url)
-        self._serial = 0
         self._last_hash: str | None = None
 
     async def run(self) -> None:
@@ -73,7 +77,7 @@ class PhotoFrameFetcher:
         async with session.get(self.url, ssl=ssl, headers={"Cache-Control": "no-cache"}) as resp:
             if resp.status == 404:
                 logger.warning("Photo Frames: no photo available (empty album or wrong URL)")
-                self.state.set_photo(None)
+                self.on_photo(None, None, None)
                 self._last_hash = None
                 return 300
             resp.raise_for_status()
@@ -93,7 +97,6 @@ class PhotoFrameFetcher:
             return delay
         self._last_hash = digest
 
-        img = await asyncio.to_thread(decode_photo, data, self.screen)
         taken_at = None
         try:
             ts = float(headers.get("X-Photo-Timestamp", "") or 0)
@@ -101,7 +104,6 @@ class PhotoFrameFetcher:
         except ValueError:
             pass
         place = urllib.parse.unquote(headers.get("X-Photo-Place", "") or "") or None
-        self._serial += 1
-        self.state.set_photo(Photo(img, taken_at=taken_at, place=place, serial=self._serial))
-        logger.info("Photo Frames: new photo (%dx%d), next check in %.0fs", img.width, img.height, delay)
+        self.on_photo(data, taken_at, place)
+        logger.info("Photo Frames: new photo (%d kB), next check in %.0fs", len(data) // 1024, delay)
         return delay

@@ -3,7 +3,7 @@
     sendspin-frame [--frame-config FILE] [any `sendspin daemon` option ...]
 
 Everything that isn't a --frame-* option is handed to the upstream `sendspin daemon` command,
-so --name, --audio-device, --url, --static-delay-ms, --settings-dir ... all work as documented
+so --name, --audio-device, --url, --output-delay-ms, --settings-dir ... all work as documented
 in the sendspin CLI.
 """
 

@@ -53,6 +53,7 @@ class Snapshot:
     artwork: Image.Image | None
     artwork_serial: int
     photo: Photo | None
+    music_screen: str  # "cover" | "photos": what to show while music plays
     version: int
 
 
@@ -65,7 +66,7 @@ class SharedState:
         self._snap = Snapshot(
             connected=False, server_name=None, playback="stopped",
             playback_since=time.monotonic(), track=None, artwork=None,
-            artwork_serial=0, photo=None, version=0,
+            artwork_serial=0, photo=None, music_screen="cover", version=0,
         )
 
     def snapshot(self) -> Snapshot:
@@ -98,3 +99,6 @@ class SharedState:
 
     def set_photo(self, photo: Photo | None) -> None:
         self._update(photo=photo)
+
+    def set_music_screen(self, screen: str) -> None:
+        self._update(music_screen=screen)

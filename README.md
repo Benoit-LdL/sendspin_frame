@@ -108,6 +108,7 @@ audio_device = ""                     # see below
 url = "https://cloud.example.com/apps/photo_frames/<token>"
 
 [display]
+resolution = "1280x720"               # needs apply-resolution.sh + reboot, see below
 sleep = "23:30-07:00"                 # screen off at night, wakes for music
 rotate = 0
 ```
@@ -117,6 +118,20 @@ In Nextcloud, open **Photos**, create an album with the photos you want, and the
 Frames → New frame**. Pick the album and the rotation settings, such as *every 1 hour* or *daily
 from 07:00 to 23:00*, and copy the frame's public link into `photos.url`. The link looks like
 `https://<your-cloud>/apps/photo_frames/<64 characters>`.
+
+### Screen resolution
+On a big TV the Pi often runs at 1920x1080. `1280x720` means about half the pixels to draw, which
+keeps things smooth on a Pi Zero 2 W, and the TV upscales it. The resolution is chosen at boot,
+so after changing `display.resolution`:
+```bash
+sudo /opt/sendspin-frame/tools/apply-resolution.sh && sudo reboot
+```
+It sets `video=HDMI-A-N:WxH@60` in `cmdline.txt`. `"auto"` removes it again.
+
+### Boot text size
+The text console shown while the Pi boots uses its own font. To make it smaller (or bigger), run
+`sudo dpkg-reconfigure console-setup` (pick *Terminus* and a size such as `8x16` or `6x12`), or
+set `FONTFACE` / `FONTSIZE` in `/etc/default/console-setup` and run `sudo setupcon`.
 
 ### Audio output
 ```bash
@@ -128,7 +143,7 @@ first.
 
 ### Sync with other speakers
 Music Assistant can adjust the delay per player. You can also set a fixed delay in the config:
-`extra_args = ["--static-delay-ms", "120"]`.
+`extra_args = ["--output-delay-ms", "120"]`.
 
 ## Troubleshooting
 

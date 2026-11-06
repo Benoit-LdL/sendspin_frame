@@ -10,6 +10,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+MUSIC_SCREENS = ("cover", "photos")
+
 
 @dataclass
 class SendspinConfig:
@@ -17,7 +19,7 @@ class SendspinConfig:
     name: str = ""
     # Audio output, see `sendspin audio-devices list` (empty = system default).
     audio_device: str = ""
-    # Extra `sendspin daemon` command line options, e.g. ["--static-delay-ms", "120"].
+    # Extra `sendspin daemon` command line options, e.g. ["--output-delay-ms", "120"].
     extra_args: list[str] = field(default_factory=list)
 
 
@@ -25,6 +27,9 @@ class SendspinConfig:
 class DisplayConfig:
     # "/dev/fb0" for the real screen, "png:/path/file.png" to render into a PNG (testing).
     device: str = "/dev/fb0"
+    # HDMI resolution, set at boot through cmdline.txt by tools/apply-resolution.sh (run by
+    # install.sh; reboot afterwards). "" = leave alone, "auto" = the screen's preferred mode.
+    resolution: str = ""
     # Output size override; 0 = use the framebuffer's size (PNG backend defaults to 1280x720).
     width: int = 0
     height: int = 0
@@ -43,6 +48,9 @@ class DisplayConfig:
 
 @dataclass
 class NowPlayingConfig:
+    # What to show while music plays: "cover" (album art, title, progress) or "photos"
+    # (keep the Photo Frames slideshow going; falls back to "cover" while there's no photo).
+    screen: str = "cover"
     # When playback is paused, keep showing the track for this long, then go idle.
     paused_timeout: int = 90
     # When playback stops, go idle after this many seconds.
@@ -140,6 +148,8 @@ def load_config(path: str | None) -> FrameConfig:
         raise ValueError("display.rotate must be 0, 90, 180 or 270")
     if cfg.photos.fit not in ("contain", "cover"):
         raise ValueError('photos.fit must be "contain" or "cover"')
+    if cfg.now_playing.screen not in MUSIC_SCREENS:
+        raise ValueError('now_playing.screen must be "cover" or "photos"')
     if cfg.idle.mode not in ("photos", "clock", "blank"):
         raise ValueError('idle.mode must be "photos", "clock" or "blank"')
     return cfg

@@ -94,6 +94,8 @@ if [[ $BOOT_TWEAKS -eq 1 ]]; then
     fi
 fi
 
+"$APP_DIR/tools/apply-resolution.sh" "$CONF_DIR/config.toml" || true
+
 systemctl restart sendspin-frame.service
 
 say "Done!"

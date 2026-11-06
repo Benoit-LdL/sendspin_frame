@@ -10,12 +10,16 @@ name = ""
 # Empty = the system default ALSA device.
 audio_device = ""
 # Any other `sendspin daemon` option, e.g. a fixed delay to line up with other speakers:
-# extra_args = ["--static-delay-ms", "120"]
+# extra_args = ["--output-delay-ms", "120"]
 extra_args = []
 
 [display]
 # The screen. Use "png:/tmp/screen.png" to render into an image instead (testing).
 device = "/dev/fb0"
+# Screen resolution, e.g. "1280x720" (lighter on the Pi) or "1920x1080". It's set at boot, so
+# after changing it run:  sudo /opt/sendspin-frame/tools/apply-resolution.sh && sudo reboot
+# "" = leave the boot settings alone, "auto" = the screen's own preferred mode.
+resolution = ""
 # Rotate the picture: 0, 90, 180 or 270 (e.g. for a portrait-mounted screen).
 rotate = 0
 # Crossfade between screens / photos in milliseconds (0 = no animation, lightest on CPU).
@@ -29,6 +33,9 @@ hide_console = true
 console_tty = "/dev/tty1"
 
 [now_playing]
+# What to show while music plays: "cover" (album art, title, progress) or "photos"
+# (keep the photo slideshow going). "photos" needs [photos] url; without a photo it shows the cover.
+screen = "cover"
 # Keep the track on screen this many seconds after pausing / stopping, then go idle.
 paused_timeout = 90
 stopped_timeout = 5

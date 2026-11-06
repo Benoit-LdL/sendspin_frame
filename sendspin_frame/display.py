@@ -76,7 +76,9 @@ class FramebufferDisplay(Display):
     def _enter_graphics_mode(self, tty: str) -> None:
         # In KD_GRAPHICS mode the kernel console stops drawing (no cursor, no login prompt).
         try:
-            fd = os.open(tty, os.O_RDWR | os.O_NOCTTY)
+            # Write-only: /dev/tty1 is crw--w---- root:tty, so the tty group can't read it.
+            # KDSETMODE itself is allowed through CAP_SYS_TTY_CONFIG (see the systemd unit).
+            fd = os.open(tty, os.O_WRONLY | os.O_NOCTTY)
             fcntl.ioctl(fd, KDSETMODE, KD_GRAPHICS)
             self._tty_fd = fd
         except OSError as exc:
