@@ -88,6 +88,7 @@ def _screen_main(cfg: FrameConfig, inbox: mp.Queue, ready: Any) -> None:
                                d.console_tty)
         state = SharedState()
         state.set_music_screen(cfg.now_playing.screen)
+        state.set_show_stats(cfg.display.show_stats)
         engine = Engine(cfg, state, display)
     except Exception as exc:  # noqa: BLE001 - report to the parent, which keeps the audio going
         logger.exception("The screen could not be started")
@@ -119,6 +120,9 @@ def _screen_main(cfg: FrameConfig, inbox: mp.Queue, ready: Any) -> None:
             elif kind == "music_screen":
                 state.set_music_screen(msg[1])
                 logger.info("While music plays, showing: %s", msg[1])
+            elif kind == "show_stats":
+                state.set_show_stats(msg[1])
+                logger.info("System stats on screen: %s", "on" if msg[1] else "off")
             elif kind == "artwork":
                 state.set_artwork(decode_artwork(msg[1], side) if msg[1] else None)
             elif kind == "photo":

@@ -13,7 +13,7 @@ from sendspin_frame.screen import decode_artwork, trim_letterbox
 from sendspin_frame.display import FramebufferDisplay
 from sendspin_frame.photoframe import image_url
 from sendspin_frame.renderer import Renderer, ellipsize, fmt_time, wrap
-from sendspin_frame.state import Photo, Track
+from sendspin_frame.state import Photo, SharedState, Track
 
 
 def test_config_roundtrip(tmp_path):
@@ -166,14 +166,71 @@ def test_mqtt_discovery_payload():
     import json
 
     from sendspin_frame.config import MqttConfig
-    from sendspin_frame.mqtt import MqttBridge, node_id
+    from sendspin_frame.mqtt import MqttBridge, make_entities, node_id
 
     assert node_id("Living Room TV!") == "living_room_tv"
-    b = MqttBridge(MqttConfig(host="x"), "TV", lambda: "cover", lambda v: None)
-    p = json.loads(b._discovery_payload())
+    got = {}
+    ents = make_entities(lambda: "cover", lambda v: got.update(screen=v),
+                         lambda: False, lambda v: got.update(stats=v))
+    b = MqttBridge(MqttConfig(host="x"), "TV", ents)
+    sel, sw = ents
+    p = json.loads(b.discovery_payload(sel))
     assert p["command_topic"] == "sendspin_frame/tv/music_screen/set"
     assert p["options"] == ["Cover art", "Photo slideshow"]
-    assert b._topics["discovery"] == "homeassistant/select/tv/music_screen/config"
+    assert b.discovery_topic(sel) == "homeassistant/select/tv/music_screen/config"
+    p = json.loads(b.discovery_payload(sw))
+    assert (p["payload_on"], p["payload_off"]) == ("ON", "OFF")
+    assert b.discovery_topic(sw) == "homeassistant/switch/tv/show_stats/config"
+    assert sel.parse("Photo slideshow") == "photos" and sw.parse("ON") is True
+
+
+def test_sysstats_reads_proc(tmp_path):
+    from sendspin_frame.sysstats import StatsReader
+
+    (tmp_path / "proc").mkdir()
+    stat = tmp_path / "proc" / "stat"
+    stat.write_text("cpu  100 0 100 800 0 0 0 0 0 0\n")
+    (tmp_path / "proc" / "meminfo").write_text(
+        "MemTotal:  1000 kB\nMemFree: 100 kB\nMemAvailable:  750 kB\n")
+    therm = tmp_path / "sys" / "class/thermal/thermal_zone0"
+    therm.mkdir(parents=True)
+    (therm / "temp").write_text("52300\n")
+    r = StatsReader(str(tmp_path / "proc"), str(tmp_path / "sys"))
+    stat.write_text("cpu  150 0 150 900 0 0 0 0 0 0\n")  # 100 busy of 200 ticks
+    s = r.read()
+    assert (round(s.cpu_pct), round(s.ram_pct), round(s.temp_c)) == (50, 25, 52)
+    assert s.text() == "CPU 50%   RAM 25%   52°C"
+
+
+def test_stats_overlay_toggles_on_and_off():
+    from sendspin_frame.config import FrameConfig
+    from sendspin_frame.display import Display
+    from sendspin_frame.engine import Engine
+
+    class Capture(Display):
+        width, height = 640, 360
+
+        def __init__(self):
+            self.boxes = []
+
+        def show(self, img, box=None, fast=False):
+            self.boxes.append(box)
+
+    cfg = FrameConfig()
+    cfg.display.transition_ms = 0
+    disp = Capture()
+    state = SharedState()
+    engine = Engine(cfg, state, disp)
+    engine._tick()  # idle clock screen
+    before = engine._frame.crop(engine._stats_box())
+    state.set_show_stats(True)
+    engine._tick()
+    with_stats = engine._frame.crop(engine._stats_box())
+    assert disp.boxes[-1] == engine._stats_box()  # only the corner was redrawn
+    assert before.tobytes() != with_stats.tobytes()
+    state.set_show_stats(False)
+    engine._tick()
+    assert engine._frame.crop(engine._stats_box()).tobytes() == before.tobytes()
 
 
 def test_photo_status_badge_follows_connection():

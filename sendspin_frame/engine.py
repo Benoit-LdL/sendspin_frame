@@ -13,8 +13,9 @@ from PIL import Image
 
 from .config import FrameConfig
 from .display import Display
-from .renderer import Renderer, Scene
+from .renderer import Box, Renderer, Scene, draw_text
 from .state import SharedState, Snapshot, Track
+from .sysstats import StatsReader
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,8 @@ logger = logging.getLogger(__name__)
 ARTWORK_GRACE_S = 2.0
 # Let bursts of updates (metadata + artwork + state) settle before rebuilding.
 SETTLE_S = 0.25
+# How often the CPU / RAM / temperature overlay is refreshed.
+STATS_INTERVAL_S = 5.0
 
 
 def pixel_shift_offset(max_px: int, period_s: float, now_wall: float) -> tuple[int, int]:
@@ -80,6 +83,12 @@ class Engine(threading.Thread):
         self._np_art_serial = -1
         self._pending_key = None
         self._pending_since = 0.0
+        # System stats overlay (top-left corner).
+        self._stats = StatsReader()
+        self._stats_text = ""
+        self._stats_on = False
+        self._stats_bg: Image.Image | None = None  # the corner without the overlay
+        self._stats_next = 0.0
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -175,6 +184,45 @@ class Engine(threading.Thread):
             if self._frame is not None and self._powered:
                 self._show_full(self._frame)
 
+    def _paste(self, region: Image.Image, box: Box) -> None:
+        """Update one part of the picture (and of the screen)."""
+        if self._frame is None or self._shown is None:
+            return
+        self._frame.paste(region, box[:2])
+        dx, dy = self._offset
+        if self._shown is not self._frame:
+            self._shown.paste(region, (box[0] + dx, box[1] + dy))
+        self.display.show(self._shown, (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy))
+
+    # ------------------------------------------------------------------ stats overlay
+
+    def _stats_box(self) -> Box:
+        W, H = self.display.width, self.display.height
+        k = min(W, H)
+        return (0, 0, int(W * 0.5), int(k * 0.03) + int(k * 0.026 * 1.8))
+
+    def _draw_stats(self, region: Image.Image) -> None:
+        k = min(self.display.width, self.display.height)
+        font = self.renderer.fonts.get("medium", k * 0.026)
+        m = int(k * 0.03)
+        draw_text(region, (m, m), self._stats_text, font, alpha=0.85, anchor="lt", shadow=0.7)
+
+    def _update_stats(self, snap: Snapshot, now: float) -> None:
+        """Switch the overlay on / off, and refresh its numbers every few seconds."""
+        want = snap.show_stats
+        if want == self._stats_on and (not want or now < self._stats_next):
+            return
+        if self._frame is None or self._stats_bg is None:
+            self._stats_on = want
+            return
+        region = self._stats_bg.copy()
+        if want:
+            self._stats_text = self._stats.read().text()
+            self._stats_next = now + STATS_INTERVAL_S
+            self._draw_stats(region)
+        self._stats_on = want
+        self._paste(region, self._stats_box())
+
     def _crossfade(self, new: Image.Image) -> None:
         old = self._shown
         ms = self.cfg.display.transition_ms
@@ -199,6 +247,14 @@ class Engine(threading.Thread):
 
     def _present(self, scene: Scene, now: float, animate: bool) -> None:
         frame = scene.frame(now)
+        box = self._stats_box()
+        self._stats_bg = frame.crop(box)
+        if self._stats_on and scene.key[0] != "blank":
+            if not self._stats_text:
+                self._stats_text = self._stats.read().text()
+            region = self._stats_bg.copy()
+            self._draw_stats(region)
+            frame.paste(region, box[:2])
         if animate:
             self._crossfade(frame)
         else:
@@ -258,20 +314,18 @@ class Engine(threading.Thread):
             dkey = self._scene.dynamic_key(now)
             if dkey != self._dyn_key:
                 result = self._scene.dynamic_region(now)
-                if result is not None and self._frame is not None and self._shown is not None:
-                    region, box = result
-                    self._frame.paste(region, box[:2])
-                    dx, dy = self._offset
-                    self._shown.paste(region, (box[0] + dx, box[1] + dy))
-                    self.display.show(self._shown, (box[0] + dx, box[1] + dy,
-                                                    box[2] + dx, box[3] + dy))
+                if result is not None:
+                    self._paste(*result)
                 self._dyn_key = dkey
+        self._update_stats(snap, now)
+        wake = 1.0
+        if self._stats_on:
+            wake = max(0.05, min(wake, self._stats_next - now))
 
         if mode == "np":
             # Wake shortly after the next whole second of track position.
             track = snap.track
             pos = track.position_ms(now) if track else None
             if pos is not None and not self._paused:
-                return max(0.05, (1000 - pos % 1000) / 1000 + 0.02)
-            return 1.0
-        return 1.0
+                return min(wake, max(0.05, (1000 - pos % 1000) / 1000 + 0.02))
+        return wake

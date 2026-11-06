@@ -48,6 +48,8 @@ class DisplayConfig:
     # to a new position every `pixel_shift_minutes`.
     pixel_shift: int = 0
     pixel_shift_minutes: float = 3
+    # CPU use, RAM use and CPU temperature in the top-left corner (also switchable over MQTT).
+    show_stats: bool = False
     # Put the console into graphics mode so the text cursor / login prompt never shows.
     hide_console: bool = True
     console_tty: str = "/dev/tty1"

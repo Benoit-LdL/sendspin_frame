@@ -54,6 +54,7 @@ class Snapshot:
     artwork_serial: int
     photo: Photo | None
     music_screen: str  # "cover" | "photos": what to show while music plays
+    show_stats: bool  # CPU / RAM / temperature overlay
     version: int
 
 
@@ -66,7 +67,8 @@ class SharedState:
         self._snap = Snapshot(
             connected=False, server_name=None, playback="stopped",
             playback_since=time.monotonic(), track=None, artwork=None,
-            artwork_serial=0, photo=None, music_screen="cover", version=0,
+            artwork_serial=0, photo=None, music_screen="cover", show_stats=False,
+            version=0,
         )
 
     def snapshot(self) -> Snapshot:
@@ -102,3 +104,6 @@ class SharedState:
 
     def set_music_screen(self, screen: str) -> None:
         self._update(music_screen=screen)
+
+    def set_show_stats(self, show: bool) -> None:
+        self._update(show_stats=show)

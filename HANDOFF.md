@@ -78,7 +78,11 @@ docs/screenshots/            README screenshots
 - A `display.resolution` setting was tried and removed again at the user's request: lowering the
   resolution (`video=` in cmdline.txt) is now a README tip instead.
 - Added: `display.pixel_shift` (OLED burn-in: whole picture moves, black edges), and an MQTT
-  bridge (`mqtt.py`) so Home Assistant gets a "Screen during music" select via MQTT discovery.
+  bridge (`mqtt.py`) so Home Assistant gets a "Screen during music" select and a "System stats
+  on screen" switch via MQTT discovery (states retained and restored on start).
+- Also: `sendspin.delay_ms`, `sendspin.server_url` (MA missed a restarted player over mDNS),
+  Music Assistant logo badge (green/red) on the photo screen, CPU/RAM/temp overlay
+  (`sysstats.py`, drawn by the engine in the top-left corner on every screen).
 
 ## Bugs found and fixed during testing
 

@@ -34,6 +34,9 @@ sleep = ""
 # by a few pixels, like the "screen shift" of OLED TVs. 0 = off; 4-8 is unnoticeable on a TV.
 pixel_shift = 0
 pixel_shift_minutes = 3
+# CPU use, RAM use and CPU temperature in the top-left corner. Can also be switched from
+# Home Assistant (see [mqtt]).
+show_stats = false
 # Keep the text console (cursor, login prompt) from drawing over the picture.
 hide_console = true
 console_tty = "/dev/tty1"

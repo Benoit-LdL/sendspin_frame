@@ -31,7 +31,9 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
 - **Light on the Pi.** It only redraws what changes: a progress tick rewrites a few pixel rows.
   Decoding and rendering run in a low-priority thread, so the audio has priority.
 - **Home Assistant control over MQTT.** Choose between the cover and the photo slideshow while
-  music plays, from Home Assistant. The device sets itself up through MQTT discovery.
+  music plays, and show or hide the system stats, from Home Assistant. The device sets itself up
+  through MQTT discovery.
+- **Optional system stats.** CPU use, RAM use and CPU temperature in the top-left corner.
 - **OLED burn-in protection.** Optionally moves the picture by a few pixels every few minutes.
 - **Optional night mode.** The screen switches off in a time window you choose, and wakes up when
   music starts.
@@ -128,10 +130,13 @@ username = "mqtt-user"
 password = "..."
 ```
 After a restart, a device named after the player shows up under **Settings → Devices &
-services → MQTT**, with a **Screen during music** choice: *Cover art* or *Photo slideshow*. The
-choice is kept across restarts, and can be used in automations, for example the slideshow only
-during the evening. `now_playing.screen` in the config is the default until the first choice in
-Home Assistant.
+services → MQTT**, with:
+- **Screen during music**: *Cover art* or *Photo slideshow*.
+- **System stats on screen**: CPU use, RAM use and CPU temperature in the top-left corner.
+
+Both are kept across restarts and can be used in automations, for example the slideshow only
+during the evening. `now_playing.screen` and `display.show_stats` in the config are the defaults
+until the first change in Home Assistant.
 
 ### OLED TVs and burn-in
 Set `display.pixel_shift = 6`. Every `pixel_shift_minutes` (default 3) the whole picture moves to
