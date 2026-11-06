@@ -45,6 +45,8 @@ def main() -> int:
         from_config += ["--name", cfg.sendspin.name]
     if cfg.sendspin.audio_device:
         from_config += ["--audio-device", cfg.sendspin.audio_device]
+    if cfg.sendspin.server_url:
+        from_config += ["--url", cfg.sendspin.server_url]
     if cfg.sendspin.delay_ms:
         from_config += ["--output-delay-ms", str(cfg.sendspin.delay_ms)]
     from_config += cfg.sendspin.extra_args

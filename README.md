@@ -108,6 +108,7 @@ touch:
 name = "Living Room Frame"            # name in Music Assistant
 audio_device = ""                     # see below
 delay_ms = 0                          # audio delay, to sync with other speakers
+server_url = "ws://192.168.1.10:8927/sendspin"   # Music Assistant (recommended, see below)
 
 [photos]
 url = "https://cloud.example.com/apps/photo_frames/<token>"
@@ -169,7 +170,7 @@ Music Assistant can adjust the delay per player. You can also set a fixed delay 
 | Blinking cursor / text on top | Reboot after install (needs the `cmdline.txt` options). Check that `getty@tty1` is disabled. |
 | Colours look wrong / picture garbled | Check `cat /sys/class/graphics/fb0/bits_per_pixel` (16, 24 or 32 are supported) and open an issue with the value. |
 | No sound | Choose the device explicitly (see *Audio output*). `alsamixer` to check levels. |
-| Player not in Music Assistant | The Pi and MA must share a network with mDNS. Alternatively connect directly: `extra_args = ["--url", "ws://MA_IP:8927/sendspin"]`. |
+| Player offline / not in Music Assistant | Set `server_url = "ws://MA_IP:8927/sendspin"` under `[sendspin]`: the player then connects to Music Assistant itself and reconnects after restarts. Without it, Music Assistant has to discover the player over mDNS, which can fail across Docker/VM networks or miss a quick restart. |
 | Photos don't appear | Open `<your frame url>/image` in a browser. It must show a photo. For self-signed certs, set `photos.verify_tls = false`. |
 | Slow screen changes, high CPU use | Set `transition_ms = 0` to turn off crossfades. On a big TV, also lower the screen resolution (see below). |
 | Screen is upside down / sideways | `display.rotate = 180` (or `90` / `270`). |

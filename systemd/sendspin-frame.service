@@ -11,6 +11,10 @@ Group=sendspin
 SupplementaryGroups=audio video tty
 # Lets the service switch tty1 into graphics mode, so no console text shows on screen.
 AmbientCapabilities=CAP_SYS_TTY_CONFIG
+# Make sure the tty group may write to tty1 (an earlier autologin or `mesg n` can leave it
+# owned by a user with no group access). "+" runs this as root; "-" ignores failures.
+ExecStartPre=-+/bin/chown root:tty /dev/tty1
+ExecStartPre=-+/bin/chmod 0620 /dev/tty1
 Environment=PYTHONUNBUFFERED=1
 # Creates /var/lib/sendspin-frame (player identity, pairing, volume) owned by the service user.
 StateDirectory=sendspin-frame

@@ -12,6 +12,10 @@ audio_device = ""
 # Delay the audio by this many milliseconds, to line it up with your other speakers
 # (a TV often adds its own delay). 0 = none. Music Assistant can also adjust it per player.
 delay_ms = 0
+# Music Assistant's Sendspin address, e.g. "ws://192.168.1.10:8927/sendspin". The player then
+# connects (and reconnects) by itself. Empty = wait for Music Assistant to find it (mDNS),
+# which can miss a player that restarted. Recommended when you know the address.
+server_url = ""
 # Any other `sendspin daemon` option, e.g. ["--url", "ws://192.168.1.10:8927/sendspin"]
 extra_args = []
 

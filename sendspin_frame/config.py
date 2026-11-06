@@ -22,6 +22,9 @@ class SendspinConfig:
     # Delay this player's audio by this many milliseconds, to line it up with your other
     # speakers (e.g. a TV that adds its own processing delay). 0 = none.
     delay_ms: int = 0
+    # Connect to Music Assistant at this address instead of waiting to be discovered (mDNS),
+    # e.g. "ws://192.168.1.10:8927/sendspin". Reconnects on its own. Empty = discovery.
+    server_url: str = ""
     # Extra `sendspin daemon` command line options, e.g. ["--url", "ws://192.168.1.10:8927/sendspin"].
     extra_args: list[str] = field(default_factory=list)
 
