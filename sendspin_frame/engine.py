@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import math
 import os
 import threading
 import time
@@ -22,6 +23,20 @@ logger = logging.getLogger(__name__)
 ARTWORK_GRACE_S = 2.0
 # Let bursts of updates (metadata + artwork + state) settle before rebuilding.
 SETTLE_S = 0.25
+
+
+def pixel_shift_offset(max_px: int, period_s: float, now_wall: float) -> tuple[int, int]:
+    """Where the picture sits now: a slow walk over points around the centre (OLED burn-in).
+
+    Two rings (full and half radius, offset by half a step) so the edges of static elements
+    land on many different pixels over time. Changes once per `period_s`.
+    """
+    if max_px <= 0:
+        return (0, 0)
+    step = int(now_wall // max(1.0, period_s)) % 16
+    radius = max_px if step % 2 == 0 else max_px / 2
+    angle = (step // 2) * (math.tau / 8) + (0 if step % 2 == 0 else math.tau / 16)
+    return (round(radius * math.cos(angle)), round(radius * math.sin(angle)))
 
 
 def _parse_window(spec: str) -> tuple[dt.time, dt.time] | None:
@@ -53,7 +68,9 @@ class Engine(threading.Thread):
         self._stop_event = threading.Event()
         self._sleep_window = _parse_window(cfg.display.sleep)
         self._scene: Scene | None = None
-        self._frame: Image.Image | None = None
+        self._frame: Image.Image | None = None  # the picture as rendered
+        self._shown: Image.Image | None = None  # the same, moved by the pixel shift
+        self._offset = (0, 0)
         self._dyn_key = None
         self._powered = True
         self._paused = False
@@ -139,12 +156,32 @@ class Engine(threading.Thread):
             self._powered = on
             self.display.set_power(on)
 
+    def _shift(self, img: Image.Image) -> Image.Image:
+        dx, dy = self._offset
+        if not (dx or dy):
+            return img
+        # Cropping outside the picture fills with black: OLED pixels that are simply off.
+        return img.crop((-dx, -dy, img.width - dx, img.height - dy))
+
+    def _show_full(self, frame: Image.Image) -> None:
+        self._shown = self._shift(frame)
+        self.display.show(self._shown)
+
+    def _update_pixel_shift(self) -> None:
+        d = self.cfg.display
+        offset = pixel_shift_offset(d.pixel_shift, d.pixel_shift_minutes * 60, time.time())
+        if offset != self._offset:
+            self._offset = offset
+            if self._frame is not None and self._powered:
+                self._show_full(self._frame)
+
     def _crossfade(self, new: Image.Image) -> None:
-        old = self._frame
+        old = self._shown
         ms = self.cfg.display.transition_ms
         if old is None or ms <= 0 or old.size != new.size:
-            self.display.show(new)
+            self._show_full(new)
             return
+        new_shown = self._shift(new)
         duration = ms / 1000
         frame_dt = 1 / max(1, self.cfg.display.transition_fps)
         start = time.monotonic()
@@ -153,18 +190,19 @@ class Engine(threading.Thread):
             if t >= 1:
                 break
             eased = t * t * (3 - 2 * t)  # smoothstep
-            self.display.show(Image.blend(old, new, eased), fast=True)
+            self.display.show(Image.blend(old, new_shown, eased), fast=True)
             # Pace the animation; if the Pi is slow we simply show fewer frames.
             sleep_for = frame_dt - ((time.monotonic() - start) % frame_dt)
             time.sleep(max(0.0, sleep_for))
-        self.display.show(new)
+        self._shown = new_shown
+        self.display.show(new_shown)
 
     def _present(self, scene: Scene, now: float, animate: bool) -> None:
         frame = scene.frame(now)
         if animate:
             self._crossfade(frame)
         else:
-            self.display.show(frame)
+            self._show_full(frame)
         self._frame = frame
         self._scene = scene
         self._dyn_key = scene.dynamic_key(now) if scene.dynamic_key else None
@@ -200,7 +238,9 @@ class Engine(threading.Thread):
         if not self._powered:
             self._set_power(True)
             self._frame = Image.new("RGB", (self.display.width, self.display.height))
+            self._shown = self._frame
             self._scene = None
+        self._update_pixel_shift()
 
         key = self._scene_key(mode, snap)
         if self._scene is None or self._scene.key != key:
@@ -218,10 +258,13 @@ class Engine(threading.Thread):
             dkey = self._scene.dynamic_key(now)
             if dkey != self._dyn_key:
                 result = self._scene.dynamic_region(now)
-                if result is not None and self._frame is not None:
+                if result is not None and self._frame is not None and self._shown is not None:
                     region, box = result
                     self._frame.paste(region, box[:2])
-                    self.display.show(self._frame, box)
+                    dx, dy = self._offset
+                    self._shown.paste(region, (box[0] + dx, box[1] + dy))
+                    self.display.show(self._shown, (box[0] + dx, box[1] + dy,
+                                                    box[2] + dx, box[3] + dy))
                 self._dyn_key = dkey
 
         if mode == "np":

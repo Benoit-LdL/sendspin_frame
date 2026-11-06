@@ -42,6 +42,7 @@ class FrameRuntime:
         self._connected = False
         self._server_name: str | None = None
         self._playback = "stopped"
+        self._music_screen = cfg.now_playing.screen
         self._art_received_at = 0.0
         self._art_url: str | None = None
         self._art_url_task: asyncio.Task | None = None
@@ -54,6 +55,12 @@ class FrameRuntime:
         if self.screen.running and self.cfg.photos.url:
             fetcher = PhotoFrameFetcher(self.cfg.photos, self._on_photo)
             self._tasks.append(asyncio.create_task(fetcher.run(), name="photoframe"))
+        if self.cfg.mqtt.host:
+            from .mqtt import MqttBridge
+
+            bridge = MqttBridge(self.cfg.mqtt, self.cfg.sendspin.name,
+                                lambda: self._music_screen, self.set_music_screen)
+            self._tasks.append(asyncio.create_task(bridge.run(), name="mqtt"))
 
     async def stop(self) -> None:
         for task in self._tasks:
@@ -80,6 +87,7 @@ class FrameRuntime:
 
     def set_music_screen(self, screen: str) -> None:
         """What to show while music plays: "cover" or "photos" (can change at any time)."""
+        self._music_screen = screen
         self.screen.send("music_screen", screen)
 
     def _on_photo(self, data: bytes | None, taken_at: float | None, place: str | None) -> None:

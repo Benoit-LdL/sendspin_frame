@@ -29,6 +29,9 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
   is the one you set in Nextcloud. Photos crossfade.
 - **Light on the Pi.** It only redraws what changes: a progress tick rewrites a few pixel rows.
   Decoding and rendering run in a low-priority thread, so the audio has priority.
+- **Home Assistant control over MQTT.** Choose between the cover and the photo slideshow while
+  music plays, from Home Assistant. The device sets itself up through MQTT discovery.
+- **OLED burn-in protection.** Optionally moves the picture by a few pixels every few minutes.
 - **Optional night mode.** The screen switches off in a time window you choose, and wakes up when
   music starts.
 - Works with any framebuffer screen: HDMI, DSI or SPI, at 16 or 32 bpp, landscape or portrait,
@@ -103,30 +106,42 @@ touch:
 [sendspin]
 name = "Living Room Frame"            # name in Music Assistant
 audio_device = ""                     # see below
+delay_ms = 0                          # audio delay, to sync with other speakers
 
 [photos]
 url = "https://cloud.example.com/apps/photo_frames/<token>"
 
 [display]
-resolution = "1280x720"               # needs apply-resolution.sh + reboot, see below
+pixel_shift = 6                       # OLED: move the picture a few pixels now and then
 sleep = "23:30-07:00"                 # screen off at night, wakes for music
 rotate = 0
 ```
+
+### Home Assistant (MQTT)
+With an MQTT broker (for example the Mosquitto add-on), add to the config:
+```toml
+[mqtt]
+host = "192.168.1.10"        # your Home Assistant / broker address
+username = "mqtt-user"
+password = "..."
+```
+After a restart, a device named after the player shows up under **Settings → Devices &
+services → MQTT**, with a **Screen during music** choice: *Cover art* or *Photo slideshow*. The
+choice is kept across restarts, and can be used in automations, for example the slideshow only
+during the evening. `now_playing.screen` in the config is the default until the first choice in
+Home Assistant.
+
+### OLED TVs and burn-in
+Set `display.pixel_shift = 6`. Every `pixel_shift_minutes` (default 3) the whole picture moves to
+a new spot, at most 6 pixels from the centre, like the "screen shift" of OLED TVs. The clock and
+text then never stay on exactly the same pixels. Also turn on the TV's own protection features if
+it has them ("Screen Shift", "Pixel Orbit", "Logo Luminance").
 
 ### Photo Frames link
 In Nextcloud, open **Photos**, create an album with the photos you want, and then go to **Photo
 Frames → New frame**. Pick the album and the rotation settings, such as *every 1 hour* or *daily
 from 07:00 to 23:00*, and copy the frame's public link into `photos.url`. The link looks like
 `https://<your-cloud>/apps/photo_frames/<64 characters>`.
-
-### Screen resolution
-On a big TV the Pi often runs at 1920x1080. `1280x720` means about half the pixels to draw, which
-keeps things smooth on a Pi Zero 2 W, and the TV upscales it. The resolution is chosen at boot,
-so after changing `display.resolution`:
-```bash
-sudo /opt/sendspin-frame/tools/apply-resolution.sh && sudo reboot
-```
-It sets `video=HDMI-A-N:WxH@60` in `cmdline.txt`. `"auto"` removes it again.
 
 ### Boot text size
 The text console shown while the Pi boots uses its own font. To make it smaller (or bigger), run
@@ -143,7 +158,7 @@ first.
 
 ### Sync with other speakers
 Music Assistant can adjust the delay per player. You can also set a fixed delay in the config:
-`extra_args = ["--output-delay-ms", "120"]`.
+`delay_ms = 120` under `[sendspin]`.
 
 ## Troubleshooting
 
@@ -155,7 +170,24 @@ Music Assistant can adjust the delay per player. You can also set a fixed delay 
 | No sound | Choose the device explicitly (see *Audio output*). `alsamixer` to check levels. |
 | Player not in Music Assistant | The Pi and MA must share a network with mDNS. Alternatively connect directly: `extra_args = ["--url", "ws://MA_IP:8927/sendspin"]`. |
 | Photos don't appear | Open `<your frame url>/image` in a browser. It must show a photo. For self-signed certs, set `photos.verify_tls = false`. |
+| Slow screen changes, high CPU use | Set `transition_ms = 0` to turn off crossfades. On a big TV, also lower the screen resolution (see below). |
 | Screen is upside down / sideways | `display.rotate = 180` (or `90` / `270`). |
+
+### Lower the screen resolution
+
+On a big TV the Pi often runs at 1920x1080 (2 million pixels per picture). At 1280x720 it has
+less than half as many pixels to draw, which helps on a Pi Zero 2 W, and the TV upscales it.
+The resolution is chosen at boot. Add a `video=` option to the end of the single line in
+`/boot/firmware/cmdline.txt` (keep it all on one line), then reboot:
+
+```bash
+sudo sed -i '1 s/$/ video=HDMI-A-1:1280x720@60/' /boot/firmware/cmdline.txt
+sudo reboot
+```
+
+`journalctl -u sendspin-frame | grep Framebuffer` should then show `1280x720`. Use `HDMI-A-2`
+for the second HDMI port of a Pi 4 or 5. To go back to the TV's own choice, remove the
+`video=...` option again.
 
 ## Development (no Pi needed)
 

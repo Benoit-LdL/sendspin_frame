@@ -122,3 +122,55 @@ def test_music_screen_setting_picks_photos_or_cover():
     assert engine._mode(state.snapshot(), now) == "photo"
     state.set_music_screen("cover")
     assert engine._mode(state.snapshot(), now) == "np"
+
+
+def test_pixel_shift_stays_within_bounds_and_moves():
+    from sendspin_frame.engine import pixel_shift_offset
+
+    assert pixel_shift_offset(0, 180, 1e9) == (0, 0)
+    offsets = {pixel_shift_offset(6, 180, i * 180.0) for i in range(16)}
+    assert len(offsets) >= 12
+    assert all(abs(dx) <= 6 and abs(dy) <= 6 for dx, dy in offsets)
+
+
+def test_pixel_shift_moves_picture_and_partial_updates():
+    from sendspin_frame.config import FrameConfig
+    from sendspin_frame.display import Display
+    from sendspin_frame.engine import Engine
+    from sendspin_frame.state import SharedState
+
+    class Capture(Display):
+        width, height = 40, 20
+
+        def __init__(self):
+            self.last = None
+
+        def show(self, img, box=None, fast=False):
+            self.last = (img.copy(), box)
+
+    cfg = FrameConfig()
+    cfg.display.transition_ms = 0
+    disp = Capture()
+    engine = Engine(cfg, SharedState(), disp)
+    engine._offset = (3, -2)
+    frame = Image.new("RGB", (40, 20), (255, 255, 255))
+    engine._show_full(frame)
+    engine._frame = frame
+    shown, _ = disp.last
+    assert shown.getpixel((0, 10)) == (0, 0, 0)  # uncovered edge is black
+    assert shown.getpixel((20, 10)) == (255, 255, 255)
+    assert shown.getpixel((20, 19)) == (0, 0, 0)  # moved up by 2
+
+
+def test_mqtt_discovery_payload():
+    import json
+
+    from sendspin_frame.config import MqttConfig
+    from sendspin_frame.mqtt import MqttBridge, node_id
+
+    assert node_id("Living Room TV!") == "living_room_tv"
+    b = MqttBridge(MqttConfig(host="x"), "TV", lambda: "cover", lambda v: None)
+    p = json.loads(b._discovery_payload())
+    assert p["command_topic"] == "sendspin_frame/tv/music_screen/set"
+    assert p["options"] == ["Cover art", "Photo slideshow"]
+    assert b._topics["discovery"] == "homeassistant/select/tv/music_screen/config"

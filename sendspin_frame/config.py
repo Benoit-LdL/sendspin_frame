@@ -19,7 +19,10 @@ class SendspinConfig:
     name: str = ""
     # Audio output, see `sendspin audio-devices list` (empty = system default).
     audio_device: str = ""
-    # Extra `sendspin daemon` command line options, e.g. ["--output-delay-ms", "120"].
+    # Delay this player's audio by this many milliseconds, to line it up with your other
+    # speakers (e.g. a TV that adds its own processing delay). 0 = none.
+    delay_ms: int = 0
+    # Extra `sendspin daemon` command line options, e.g. ["--url", "ws://192.168.1.10:8927/sendspin"].
     extra_args: list[str] = field(default_factory=list)
 
 
@@ -27,9 +30,6 @@ class SendspinConfig:
 class DisplayConfig:
     # "/dev/fb0" for the real screen, "png:/path/file.png" to render into a PNG (testing).
     device: str = "/dev/fb0"
-    # HDMI resolution, set at boot through cmdline.txt by tools/apply-resolution.sh (run by
-    # install.sh; reboot afterwards). "" = leave alone, "auto" = the screen's preferred mode.
-    resolution: str = ""
     # Output size override; 0 = use the framebuffer's size (PNG backend defaults to 1280x720).
     width: int = 0
     height: int = 0
@@ -41,6 +41,10 @@ class DisplayConfig:
     # Turn the screen off in this window, e.g. "23:00-07:00" (empty = never).
     # The screen always wakes up when music starts playing.
     sleep: str = ""
+    # OLED burn-in protection: move the whole picture up to this many pixels (0 = off),
+    # to a new position every `pixel_shift_minutes`.
+    pixel_shift: int = 0
+    pixel_shift_minutes: float = 3
     # Put the console into graphics mode so the text cursor / login prompt never shows.
     hide_console: bool = True
     console_tty: str = "/dev/tty1"
@@ -85,6 +89,17 @@ class IdleConfig:
 
 
 @dataclass
+class MqttConfig:
+    # MQTT broker for Home Assistant (empty host = MQTT off).
+    host: str = ""
+    port: int = 1883
+    username: str = ""
+    password: str = ""
+    # Home Assistant's MQTT discovery prefix.
+    discovery_prefix: str = "homeassistant"
+
+
+@dataclass
 class StyleConfig:
     # Optional font overrides (paths to .ttf/.otf files).
     font_regular: str = ""
@@ -103,6 +118,7 @@ class FrameConfig:
     now_playing: NowPlayingConfig = field(default_factory=NowPlayingConfig)
     photos: PhotosConfig = field(default_factory=PhotosConfig)
     idle: IdleConfig = field(default_factory=IdleConfig)
+    mqtt: MqttConfig = field(default_factory=MqttConfig)
     style: StyleConfig = field(default_factory=StyleConfig)
 
 
@@ -146,6 +162,10 @@ def load_config(path: str | None) -> FrameConfig:
         _apply(cfg, tomllib.load(fh), "")
     if cfg.display.rotate not in (0, 90, 180, 270):
         raise ValueError("display.rotate must be 0, 90, 180 or 270")
+    if not 0 <= cfg.display.pixel_shift <= 50:
+        raise ValueError("display.pixel_shift must be between 0 and 50 pixels")
+    if cfg.display.pixel_shift_minutes <= 0:
+        raise ValueError("display.pixel_shift_minutes must be more than 0")
     if cfg.photos.fit not in ("contain", "cover"):
         raise ValueError('photos.fit must be "contain" or "cover"')
     if cfg.now_playing.screen not in MUSIC_SCREENS:

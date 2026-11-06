@@ -74,10 +74,11 @@ docs/screenshots/            README screenshots
   process forwards small messages plus raw JPEG bytes. Covers are decoded with JPEG draft mode at
   display size. **Not yet confirmed on the Pi.**
 - Also added: `now_playing.screen = "cover" | "photos"` (slideshow during music; can change at run
-  time via `FrameRuntime.set_music_screen`), `display.resolution` applied at boot by
-  `tools/apply-resolution.sh`, tty1 opened write-only (the service user can't read it).
-- Requested next: a Home Assistant toggle for `now_playing.screen` (MQTT discovery or HTTP: user
-  to choose).
+  time via `FrameRuntime.set_music_screen`), tty1 opened write-only (the service user can't read it).
+- A `display.resolution` setting was tried and removed again at the user's request: lowering the
+  resolution (`video=` in cmdline.txt) is now a README tip instead.
+- Added: `display.pixel_shift` (OLED burn-in: whole picture moves, black edges), and an MQTT
+  bridge (`mqtt.py`) so Home Assistant gets a "Screen during music" select via MQTT discovery.
 
 ## Bugs found and fixed during testing
 

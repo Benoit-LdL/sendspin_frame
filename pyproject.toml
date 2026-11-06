@@ -15,6 +15,7 @@ dependencies = [
     "pillow>=10.1",
     "numpy>=1.26",
     "aiohttp>=3.9",
+    "aiomqtt>=2.3",
 ]
 keywords = ["music-assistant", "sendspin", "raspberry-pi", "photo-frame", "now-playing"]
 classifiers = [

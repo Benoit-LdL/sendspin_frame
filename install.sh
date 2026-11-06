@@ -73,6 +73,9 @@ if [[ ! -f "$CONF_DIR/config.toml" ]]; then
 else
     echo "Keeping existing $CONF_DIR/config.toml"
 fi
+# The config can hold the MQTT password: readable by root and the service only.
+chown root:"$SVC_USER" "$CONF_DIR/config.toml"
+chmod 640 "$CONF_DIR/config.toml"
 
 say "Setting up the systemd service"
 cp "$APP_DIR/systemd/sendspin-frame.service" /etc/systemd/system/
@@ -93,8 +96,6 @@ if [[ $BOOT_TWEAKS -eq 1 ]]; then
         done
     fi
 fi
-
-"$APP_DIR/tools/apply-resolution.sh" "$CONF_DIR/config.toml" || true
 
 systemctl restart sendspin-frame.service
 

@@ -9,17 +9,15 @@ name = ""
 #   sudo -u sendspin /opt/sendspin-frame/.venv/bin/sendspin audio-devices list
 # Empty = the system default ALSA device.
 audio_device = ""
-# Any other `sendspin daemon` option, e.g. a fixed delay to line up with other speakers:
-# extra_args = ["--output-delay-ms", "120"]
+# Delay the audio by this many milliseconds, to line it up with your other speakers
+# (a TV often adds its own delay). 0 = none. Music Assistant can also adjust it per player.
+delay_ms = 0
+# Any other `sendspin daemon` option, e.g. ["--url", "ws://192.168.1.10:8927/sendspin"]
 extra_args = []
 
 [display]
 # The screen. Use "png:/tmp/screen.png" to render into an image instead (testing).
 device = "/dev/fb0"
-# Screen resolution, e.g. "1280x720" (lighter on the Pi) or "1920x1080". It's set at boot, so
-# after changing it run:  sudo /opt/sendspin-frame/tools/apply-resolution.sh && sudo reboot
-# "" = leave the boot settings alone, "auto" = the screen's own preferred mode.
-resolution = ""
 # Rotate the picture: 0, 90, 180 or 270 (e.g. for a portrait-mounted screen).
 rotate = 0
 # Crossfade between screens / photos in milliseconds (0 = no animation, lightest on CPU).
@@ -28,6 +26,10 @@ transition_fps = 25
 # Switch the screen off in this time window, e.g. "23:00-07:00" (empty = never).
 # It always wakes up when music starts playing.
 sleep = ""
+# OLED burn-in protection: every few minutes, move the whole picture (clock, text, cover)
+# by a few pixels, like the "screen shift" of OLED TVs. 0 = off; 4-8 is unnoticeable on a TV.
+pixel_shift = 0
+pixel_shift_minutes = 3
 # Keep the text console (cursor, login prompt) from drawing over the picture.
 hide_console = true
 console_tty = "/dev/tty1"
@@ -64,6 +66,17 @@ verify_tls = true
 # Shown when nothing is playing: "photos" (falls back to the clock while no photo is
 # available), "clock", or "blank" (screen off).
 mode = "photos"
+
+[mqtt]
+# Home Assistant over MQTT: adds a "Screen during music" choice (Cover art / Photo slideshow)
+# to a sendspin-frame device in Home Assistant, set up automatically (MQTT discovery).
+# Empty host = off. With the Mosquitto add-on: the Home Assistant address, and a Home
+# Assistant user (Settings > People) as username / password.
+host = ""
+port = 1883
+username = ""
+password = ""
+discovery_prefix = "homeassistant"
 
 [style]
 # Custom fonts (otherwise Inter, then DejaVu Sans).

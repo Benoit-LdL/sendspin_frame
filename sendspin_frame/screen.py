@@ -93,12 +93,6 @@ def _screen_main(cfg: FrameConfig, inbox: mp.Queue, ready: Any) -> None:
         logger.exception("The screen could not be started")
         ready.send(("error", repr(exc)))
         return
-    res = d.resolution.split("@")[0].strip()
-    if res and res != "auto" and d.device.startswith("/dev/") and d.rotate in (0, 180):
-        if res != f"{display.width}x{display.height}":
-            logger.warning("Screen is %dx%d but display.resolution is %s: run "
-                           "sudo /opt/sendspin-frame/tools/apply-resolution.sh, then reboot",
-                           display.width, display.height, d.resolution)
     engine.start()
     side = engine.renderer.artwork_request_size()
     ready.send(("ready", side))
