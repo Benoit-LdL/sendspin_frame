@@ -1,0 +1,27 @@
+[Unit]
+Description=Sendspin Frame (Music Assistant player + now-playing / photo frame screen)
+Documentation=https://github.com/Benoit-LdL/sendspin_frame
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sendspin
+Group=sendspin
+SupplementaryGroups=audio video tty
+# Lets the service switch tty1 into graphics mode, so no console text shows on screen.
+AmbientCapabilities=CAP_SYS_TTY_CONFIG
+Environment=PYTHONUNBUFFERED=1
+# Creates /var/lib/sendspin-frame (player identity, pairing, volume) owned by the service user.
+StateDirectory=sendspin-frame
+ExecStart=/opt/sendspin-frame/.venv/bin/sendspin-frame \
+    --frame-config /etc/sendspin-frame/config.toml \
+    --settings-dir /var/lib/sendspin-frame \
+    --disable-mpris
+Restart=on-failure
+RestartSec=5
+# Audio first: the render thread lowers its own priority further.
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target

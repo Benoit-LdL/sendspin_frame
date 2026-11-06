@@ -1,0 +1,69 @@
+# sendspin-frame configuration  (installed to /etc/sendspin-frame/config.toml)
+# Every setting is optional; the values shown are the defaults.
+# After editing:  sudo systemctl restart sendspin-frame
+
+[sendspin]
+# Player name as shown in Music Assistant (empty = the Pi's hostname).
+name = ""
+# Audio output. List the choices with:
+#   sudo -u sendspin /opt/sendspin-frame/.venv/bin/sendspin audio-devices list
+# Empty = the system default ALSA device.
+audio_device = ""
+# Any other `sendspin daemon` option, e.g. a fixed delay to line up with other speakers:
+# extra_args = ["--static-delay-ms", "120"]
+extra_args = []
+
+[display]
+# The screen. Use "png:/tmp/screen.png" to render into an image instead (testing).
+device = "/dev/fb0"
+# Rotate the picture: 0, 90, 180 or 270 (e.g. for a portrait-mounted screen).
+rotate = 0
+# Crossfade between screens / photos in milliseconds (0 = no animation, lightest on CPU).
+transition_ms = 700
+transition_fps = 25
+# Switch the screen off in this time window, e.g. "23:00-07:00" (empty = never).
+# It always wakes up when music starts playing.
+sleep = ""
+# Keep the text console (cursor, login prompt) from drawing over the picture.
+hide_console = true
+console_tty = "/dev/tty1"
+
+[now_playing]
+# Keep the track on screen this many seconds after pausing / stopping, then go idle.
+paused_timeout = 90
+stopped_timeout = 5
+show_album = true
+show_progress = true
+# Album art resolution requested from Music Assistant (0 = match the screen).
+artwork_size = 0
+
+[photos]
+# Nextcloud "Photo Frames" public link (Photos app > Photo Frames > your frame > copy link):
+# url = "https://cloud.example.com/apps/photo_frames/abc123...xyz"
+url = ""
+# "contain": whole photo on a blurred backdrop.  "cover": fill the screen (crops edges).
+fit = "contain"
+show_clock = true
+show_date = true
+# When / where the photo was taken (as provided by Photo Frames).
+show_info = true
+# Minimum seconds between checks for a new photo. The frame's own rotation
+# schedule (set in Nextcloud) decides when the photo actually changes.
+min_refresh = 20
+# Set to false for a self-signed Nextcloud certificate.
+verify_tls = true
+
+[idle]
+# Shown when nothing is playing: "photos" (falls back to the clock while no photo is
+# available), "clock", or "blank" (screen off).
+mode = "photos"
+
+[style]
+# Custom fonts (otherwise Inter, then DejaVu Sans).
+font_regular = ""
+font_bold = ""
+# strftime formats. 12h clock: "%I:%M"
+clock_format = "%H:%M"
+date_format = "%A %-d %B"
+# How dark the blurred album-art background is (0 = black, 1 = untouched).
+background_brightness = 0.42
