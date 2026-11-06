@@ -219,25 +219,25 @@ STATUS_OK = (48, 209, 88)
 STATUS_ERROR = (255, 69, 58)
 
 
+MA_LOGO = Path(__file__).parent / "assets" / "music-assistant.png"
+
+
+@functools.cache
+def _ma_logo_mask() -> Image.Image:
+    """The Music Assistant logo as an alpha mask (from the Music Assistant frontend, Apache-2.0)."""
+    return Image.open(MA_LOGO).getchannel("A")
+
+
 def status_badge(size: int, connected: bool) -> Image.Image:
-    """A small round badge with a music note: green = Music Assistant connected, red = not."""
+    """The Music Assistant logo on a small dark disc: green = connected, red = not."""
     ss = 4  # supersampled, then scaled down for smooth edges
     s = size * ss
     badge = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    d = ImageDraw.Draw(badge)
-    d.ellipse((0, 0, s - 1, s - 1), fill=(0, 0, 0, 120))
-    color = (*(STATUS_OK if connected else STATUS_ERROR), 255)
-    # Two beamed eighth notes, drawn in a box of 0..1 units inside the circle.
-    u = s / 100
-    head_w, head_h = 17 * u, 13 * u
-    for hx, hy in ((27 * u, 62 * u), (57 * u, 56 * u)):
-        d.ellipse((hx, hy, hx + head_w, hy + head_h), fill=color)
-        stem_x = hx + head_w - 3.5 * u
-        d.rectangle((stem_x, hy - 34 * u + (6 * u if hx < 40 * u else 0), stem_x + 3.5 * u,
-                     hy + head_h / 2), fill=color)
-    # Beam joining the stems.
-    x0, x1 = 27 * u + head_w - 3.5 * u, 57 * u + head_w
-    d.polygon([(x0, 34 * u), (x1, 22 * u), (x1, 31 * u), (x0, 43 * u)], fill=color)
+    ImageDraw.Draw(badge).ellipse((0, 0, s - 1, s - 1), fill=(0, 0, 0, 150))
+    logo = int(s * 0.58)
+    mask = _ma_logo_mask().resize((logo, logo), Image.Resampling.LANCZOS)
+    pos = ((s - logo) // 2, (s - logo) // 2 - s // 40)  # optically centred (house shape)
+    badge.paste((*(STATUS_OK if connected else STATUS_ERROR), 255), pos, mask)
     return badge.resize((size, size), Image.Resampling.LANCZOS)
 
 

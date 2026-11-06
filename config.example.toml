@@ -60,7 +60,7 @@ show_clock = true
 show_date = true
 # When / where the photo was taken (as provided by Photo Frames).
 show_info = true
-# Small music-note badge in the top-right corner: green = Music Assistant connected, red = not.
+# Small Music Assistant logo in the top-right corner: green = connected, red = not.
 show_status = true
 # Minimum seconds between checks for a new photo. The frame's own rotation
 # schedule (set in Nextcloud) decides when the photo actually changes.

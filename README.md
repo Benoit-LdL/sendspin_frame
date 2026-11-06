@@ -25,8 +25,8 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
   titles wrap and get truncated. The progress bar colour comes from the artwork. There is a pause
   indicator. Track changes crossfade.
 - **Photo frame when idle.** Shows the current photo of your Nextcloud Photo Frames frame,
-  including where and when it was taken, with a clock and the date. A small green or red badge
-  in the corner shows whether Music Assistant is connected. The frame's rotation schedule
+  including where and when it was taken, with a clock and the date. A small Music Assistant logo
+  in the corner shows the connection: green when connected, red when not. The frame's rotation schedule
   is the one you set in Nextcloud. Photos crossfade.
 - **Light on the Pi.** It only redraws what changes: a progress tick rewrites a few pixel rows.
   Decoding and rendering run in a low-priority thread, so the audio has priority.
@@ -233,6 +233,9 @@ upgrade, bump the pin and run the end-to-end test.
   Home Foundation folks.
 - [Photo Frames](https://github.com/jeppester/nextcloud-photo-frames) for Nextcloud by Jesper
   Sørensen.
+- The Music Assistant logo (status badge) comes from the
+  [Music Assistant frontend](https://github.com/music-assistant/frontend) (Apache-2.0). It's only
+  used to show the connection to Music Assistant; this project isn't affiliated with it.
 - [Inter](https://rsms.me/inter/) typeface by Rasmus Andersson (SIL OFL).
 - Sample images in the screenshots come from [Unsplash](https://unsplash.com) via picsum.photos.
 

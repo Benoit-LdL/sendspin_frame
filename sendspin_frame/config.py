@@ -78,7 +78,7 @@ class PhotosConfig:
     show_date: bool = True
     # Show when / where the photo was taken (from the Photo Frames headers).
     show_info: bool = True
-    # Small music-note badge in the top-right corner: green = Music Assistant connected, red = not.
+    # Small Music Assistant logo in the top-right corner: green = connected, red = not.
     show_status: bool = True
     # Never poll faster than this, even if the frame rotates every minute.
     min_refresh: int = 20
