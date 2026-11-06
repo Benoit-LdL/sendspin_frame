@@ -120,6 +120,10 @@ def _screen_main(cfg: FrameConfig, inbox: mp.Queue, ready: Any) -> None:
             elif kind == "music_screen":
                 state.set_music_screen(msg[1])
                 logger.info("While music plays, showing: %s", msg[1])
+            elif kind == "pairing":
+                state.set_pairing_code(msg[1])
+                if msg[1]:
+                    logger.info("Showing the pairing code on screen")
             elif kind == "show_stats":
                 state.set_show_stats(msg[1])
                 logger.info("System stats on screen: %s", "on" if msg[1] else "off")

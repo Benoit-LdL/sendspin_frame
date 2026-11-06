@@ -55,6 +55,8 @@ class Snapshot:
     photo: Photo | None
     music_screen: str  # "cover" | "photos": what to show while music plays
     show_stats: bool  # CPU / RAM / temperature overlay
+    pairing_code: str | None  # shown full screen while Music Assistant pairs with us
+    pairing_since: float
     version: int
 
 
@@ -68,7 +70,7 @@ class SharedState:
             connected=False, server_name=None, playback="stopped",
             playback_since=time.monotonic(), track=None, artwork=None,
             artwork_serial=0, photo=None, music_screen="cover", show_stats=False,
-            version=0,
+            pairing_code=None, pairing_since=0.0, version=0,
         )
 
     def snapshot(self) -> Snapshot:
@@ -107,3 +109,6 @@ class SharedState:
 
     def set_show_stats(self, show: bool) -> None:
         self._update(show_stats=show)
+
+    def set_pairing_code(self, code: str | None) -> None:
+        self._update(pairing_code=code, pairing_since=time.monotonic())

@@ -504,6 +504,21 @@ class Renderer:
         return Scene(("clock", connected, server_name, self.size), base, box,
                      self._clock_drawer(box, f_clock, f_date, 0, "center"), _minute_key)
 
+    def pairing(self, code: str) -> Scene:
+        """Full-screen pairing code, for "Reconfigure device" in Music Assistant."""
+        W, H = self.size
+        base = Image.new("RGB", (W, H), (9, 9, 12))
+        k = min(W, H)
+        bs = int(k * 0.14)
+        badge = status_badge(bs, True)
+        base.paste(badge, ((W - bs) // 2, int(H * 0.16)), badge)
+        draw_text(base, (W / 2, H * 0.42), "Pairing with Music Assistant",
+                  self.fonts.get("medium", k * 0.05), alpha=0.85, anchor="mm")
+        draw_text(base, (W / 2, H * 0.6), code, self.fonts.get("bold", k * 0.16), anchor="mm")
+        draw_text(base, (W / 2, H * 0.78), "Enter this code in Music Assistant",
+                  self.fonts.get("regular", k * 0.035), alpha=0.55, anchor="mm")
+        return Scene(("pairing", code, self.size), base)
+
     def blank(self) -> Scene:
         return Scene(("blank", self.size), Image.new("RGB", self.size, (0, 0, 0)))
 

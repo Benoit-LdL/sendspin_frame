@@ -245,3 +245,19 @@ def test_photo_status_badge_follows_connection():
     assert any(c[:3] == STATUS_OK for c in colors)
     colors = {c for _, c in status_badge(40, False).getcolors(4096)}
     assert any(c[:3] == STATUS_ERROR for c in colors)
+
+
+def test_pairing_code_takes_over_the_screen():
+    from sendspin_frame.config import FrameConfig
+    from sendspin_frame.display import PngDisplay
+    from sendspin_frame.engine import Engine
+
+    state = SharedState()
+    engine = Engine(FrameConfig(), state, PngDisplay("/dev/null", 320, 180))
+    now = time.monotonic()
+    assert engine._mode(state.snapshot(), now) == "clock"
+    state.set_pairing_code("123 456")
+    assert engine._mode(state.snapshot(), time.monotonic()) == "pairing"
+    assert engine._build("pairing", state.snapshot()).key[1] == "123 456"
+    state.set_pairing_code(None)
+    assert engine._mode(state.snapshot(), time.monotonic()) == "clock"

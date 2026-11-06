@@ -217,6 +217,11 @@ class FrameDaemon(daemon_mod.SendspinDaemon):
         finally:
             daemon_mod.SendspinClient = original  # type: ignore[misc]
 
+    async def _show_pairing_code(self, pairing_code: str | None, *, grouped: str | None) -> None:
+        """Music Assistant asks for the code "shown on the device's screen": show it there."""
+        await super()._show_pairing_code(pairing_code, grouped=grouped)
+        self.runtime.screen.send("pairing", grouped)
+
     def _attach_client(self, client: SendspinClient) -> None:
         super()._attach_client(client)
         self.runtime.attach(client)

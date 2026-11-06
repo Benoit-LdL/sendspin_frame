@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 ARTWORK_GRACE_S = 2.0
 # Let bursts of updates (metadata + artwork + state) settle before rebuilding.
 SETTLE_S = 0.25
+# Stop showing a pairing code that was never cleared (pairing abandoned).
+PAIRING_TIMEOUT_S = 300
 # How often the CPU / RAM / temperature overlay is refreshed.
 STATS_INTERVAL_S = 5.0
 
@@ -97,6 +99,8 @@ class Engine(threading.Thread):
     # ------------------------------------------------------------------ decisions
 
     def _mode(self, snap: Snapshot, now: float) -> str:
+        if snap.pairing_code and now - snap.pairing_since < PAIRING_TIMEOUT_S:
+            return "pairing"
         np_cfg = self.cfg.now_playing
         age = now - snap.playback_since
         if snap.connected and snap.track is not None and (
@@ -126,6 +130,8 @@ class Engine(threading.Thread):
             return ("photo", snap.photo.serial, snap.connected, size)
         if mode == "clock":
             return ("clock", snap.connected, snap.server_name, size)
+        if mode == "pairing":
+            return ("pairing", snap.pairing_code, size)
         return ("blank", size)
 
     def _build(self, mode: str, snap: Snapshot) -> Scene:
@@ -139,6 +145,8 @@ class Engine(threading.Thread):
             return r.photo(snap.photo, snap.connected)
         if mode == "clock":
             return r.clock(snap.connected, snap.server_name)
+        if mode == "pairing":
+            return r.pairing(snap.pairing_code or "")
         return r.blank()
 
     def _ready_to_build(self, mode: str, snap: Snapshot, key: tuple, now: float) -> bool:
