@@ -109,7 +109,6 @@ touch:
 [sendspin]
 name = "Living Room Frame"            # name in Music Assistant
 audio_device = ""                     # see below
-delay_ms = 0                          # audio delay, to sync with other speakers
 server_url = "ws://192.168.1.10:8927/sendspin"   # Music Assistant (recommended, see below)
 
 [photos]
@@ -164,8 +163,10 @@ Put the index or name you want into `sendspin.audio_device`. For HDMI audio on a
 first.
 
 ### Sync with other speakers
-Music Assistant can adjust the delay per player. You can also set a fixed delay in the config:
-`delay_ms = 120` under `[sendspin]`.
+Set the delay in **Music Assistant's player settings** for this player. Music Assistant sends it
+to the player on every connection and whenever you change it, so it applies immediately. The
+config's `delay_ms` is only used until Music Assistant connects, because Music Assistant's value
+replaces it.
 
 ## Troubleshooting
 

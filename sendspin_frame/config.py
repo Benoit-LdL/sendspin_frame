@@ -19,8 +19,8 @@ class SendspinConfig:
     name: str = ""
     # Audio output, see `sendspin audio-devices list` (empty = system default).
     audio_device: str = ""
-    # Delay this player's audio by this many milliseconds, to line it up with your other
-    # speakers (e.g. a TV that adds its own processing delay). 0 = none.
+    # Audio delay in ms until Music Assistant connects; Music Assistant then sends its own
+    # per-player delay setting, which replaces this value.
     delay_ms: int = 0
     # Connect to Music Assistant at this address instead of waiting to be discovered (mDNS),
     # e.g. "ws://192.168.1.10:8927/sendspin". Reconnects on its own. Empty = discovery.
