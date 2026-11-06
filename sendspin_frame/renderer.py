@@ -215,6 +215,32 @@ def placeholder_art(size: int, seed: str) -> Image.Image:
     return tile
 
 
+STATUS_OK = (48, 209, 88)
+STATUS_ERROR = (255, 69, 58)
+
+
+def status_badge(size: int, connected: bool) -> Image.Image:
+    """A small round badge with a music note: green = Music Assistant connected, red = not."""
+    ss = 4  # supersampled, then scaled down for smooth edges
+    s = size * ss
+    badge = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(badge)
+    d.ellipse((0, 0, s - 1, s - 1), fill=(0, 0, 0, 120))
+    color = (*(STATUS_OK if connected else STATUS_ERROR), 255)
+    # Two beamed eighth notes, drawn in a box of 0..1 units inside the circle.
+    u = s / 100
+    head_w, head_h = 17 * u, 13 * u
+    for hx, hy in ((27 * u, 62 * u), (57 * u, 56 * u)):
+        d.ellipse((hx, hy, hx + head_w, hy + head_h), fill=color)
+        stem_x = hx + head_w - 3.5 * u
+        d.rectangle((stem_x, hy - 34 * u + (6 * u if hx < 40 * u else 0), stem_x + 3.5 * u,
+                     hy + head_h / 2), fill=color)
+    # Beam joining the stems.
+    x0, x1 = 27 * u + head_w - 3.5 * u, 57 * u + head_w
+    d.polygon([(x0, 34 * u), (x1, 22 * u), (x1, 31 * u), (x0, 43 * u)], fill=color)
+    return badge.resize((size, size), Image.Resampling.LANCZOS)
+
+
 def fmt_time(ms: int) -> str:
     s = max(0, int(ms // 1000))
     h, rem = divmod(s, 3600)
@@ -411,9 +437,11 @@ class Renderer:
 
     # ---------------------------------------------------------------------- photo
 
-    def photo(self, photo: Photo) -> Scene:
+    def photo(self, photo: Photo, connected: bool | None = None) -> Scene:
+        """`connected`: draw the Music Assistant status badge (None = don't)."""
         W, H = self.size
         pc = self.cfg.photos
+        key = ("photo", photo.serial, connected if pc.show_status else None, self.size)
         img = photo.image.convert("RGB")
         ratio_img, ratio_scr = img.width / img.height, W / H
         if pc.fit == "cover" or abs(ratio_img - ratio_scr) / ratio_scr < 0.1:
@@ -444,13 +472,18 @@ class Renderer:
                 place = ellipsize(photo.place, f_place, W * 0.45)
                 draw_text(base, (W - m, y), place, f_place, alpha=0.95, anchor="rd", shadow=0.6)
 
+        if pc.show_status and connected is not None:
+            bs = max(20, int(k * 0.055))
+            badge = status_badge(bs, connected)
+            base.paste(badge, (W - m // 2 - bs, m // 2), badge)
+
         if not (pc.show_clock or pc.show_date):
-            return Scene(("photo", photo.serial, self.size), base)
+            return Scene(key, base)
 
         f_clock = self.fonts.get("light" if k >= 600 else "regular", k * 0.17)
         f_date = self.fonts.get("medium", k * 0.04)
         box = (0, int(H * 0.55), int(W * 0.55), H)
-        return Scene(("photo", photo.serial, self.size), base, box,
+        return Scene(key, base, box,
                      self._clock_drawer(box, f_clock, f_date, m, "left"), _minute_key)
 
     # ---------------------------------------------------------------------- clock

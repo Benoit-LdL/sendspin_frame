@@ -174,3 +174,17 @@ def test_mqtt_discovery_payload():
     assert p["command_topic"] == "sendspin_frame/tv/music_screen/set"
     assert p["options"] == ["Cover art", "Photo slideshow"]
     assert b._topics["discovery"] == "homeassistant/select/tv/music_screen/config"
+
+
+def test_photo_status_badge_follows_connection():
+    from sendspin_frame.config import FrameConfig
+    from sendspin_frame.renderer import STATUS_ERROR, STATUS_OK, Renderer, status_badge
+
+    r = Renderer(FrameConfig(), (640, 360))
+    photo = Photo(Image.new("RGB", (640, 360), (128, 128, 128)), serial=1)
+    on, off = r.photo(photo, True), r.photo(photo, False)
+    assert on.key != off.key  # the screen is redrawn when the connection changes
+    colors = {c for _, c in status_badge(40, True).getcolors(4096)}
+    assert any(c[:3] == STATUS_OK for c in colors)
+    colors = {c for _, c in status_badge(40, False).getcolors(4096)}
+    assert any(c[:3] == STATUS_ERROR for c in colors)

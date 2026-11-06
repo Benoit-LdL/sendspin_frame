@@ -25,7 +25,8 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
   titles wrap and get truncated. The progress bar colour comes from the artwork. There is a pause
   indicator. Track changes crossfade.
 - **Photo frame when idle.** Shows the current photo of your Nextcloud Photo Frames frame,
-  including where and when it was taken, with a clock and the date. The frame's rotation schedule
+  including where and when it was taken, with a clock and the date. A small green or red badge
+  in the corner shows whether Music Assistant is connected. The frame's rotation schedule
   is the one you set in Nextcloud. Photos crossfade.
 - **Light on the Pi.** It only redraws what changes: a progress tick rewrites a few pixel rows.
   Decoding and rendering run in a low-priority thread, so the audio has priority.

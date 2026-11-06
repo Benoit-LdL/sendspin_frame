@@ -75,6 +75,8 @@ class PhotosConfig:
     show_date: bool = True
     # Show when / where the photo was taken (from the Photo Frames headers).
     show_info: bool = True
+    # Small music-note badge in the top-right corner: green = Music Assistant connected, red = not.
+    show_status: bool = True
     # Never poll faster than this, even if the frame rotates every minute.
     min_refresh: int = 20
     # Verify TLS certificates (set false for self-signed Nextcloud certs).

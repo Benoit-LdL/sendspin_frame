@@ -114,7 +114,7 @@ class Engine(threading.Thread):
             return ("np", snap.track.content_key(), snap.artwork_serial, size)
         if mode == "photo":
             assert snap.photo is not None
-            return ("photo", snap.photo.serial, size)
+            return ("photo", snap.photo.serial, snap.connected, size)
         if mode == "clock":
             return ("clock", snap.connected, snap.server_name, size)
         return ("blank", size)
@@ -127,7 +127,7 @@ class Engine(threading.Thread):
                                  lambda: self.state.snapshot().track)
         if mode == "photo":
             assert snap.photo is not None
-            return r.photo(snap.photo)
+            return r.photo(snap.photo, snap.connected)
         if mode == "clock":
             return r.clock(snap.connected, snap.server_name)
         return r.blank()
