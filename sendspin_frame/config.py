@@ -82,8 +82,8 @@ class PhotosConfig:
     show_info: bool = True
     # Small Music Assistant logo in the top-right corner: green = connected, red = not.
     show_status: bool = True
-    # While music plays over the photos: title and artist in a small popup next to that logo
-    # (long text scrolls).
+    # While music plays over the photos: icon (music / radio / podcast / audiobook), title,
+    # artist and album / station / show in a small popup next to that logo (long text scrolls).
     show_now_playing: bool = True
     # Never poll faster than this, even if the frame rotates every minute.
     min_refresh: int = 20
@@ -110,6 +110,17 @@ class MqttConfig:
 
 
 @dataclass
+class MusicAssistantConfig:
+    # Music Assistant's own API, to know whether it's music, radio, a podcast or an audiobook,
+    # and the station / podcast / book name (Sendspin doesn't send these). Needs a long-lived
+    # token: in Music Assistant, click your user > Profile > Long-lived access tokens > Create.
+    # Empty = off (a track without a length is then shown as radio).
+    token: str = ""
+    # e.g. "http://192.168.1.10:8095" (empty = the host of sendspin.server_url, port 8095).
+    url: str = ""
+
+
+@dataclass
 class StyleConfig:
     # Optional font overrides (paths to .ttf/.otf files).
     font_regular: str = ""
@@ -129,6 +140,7 @@ class FrameConfig:
     photos: PhotosConfig = field(default_factory=PhotosConfig)
     idle: IdleConfig = field(default_factory=IdleConfig)
     mqtt: MqttConfig = field(default_factory=MqttConfig)
+    music_assistant: MusicAssistantConfig = field(default_factory=MusicAssistantConfig)
     style: StyleConfig = field(default_factory=StyleConfig)
 
 

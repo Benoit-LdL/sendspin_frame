@@ -47,6 +47,7 @@ class FrameRuntime:
         self._art_received_at = 0.0
         self._art_url: str | None = None
         self._art_url_task: asyncio.Task | None = None
+        self.sendspin_id: str | None = None  # our player id on the Sendspin side
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -56,6 +57,18 @@ class FrameRuntime:
         if self.screen.running and self.cfg.photos.url:
             fetcher = PhotoFrameFetcher(self.cfg.photos, self._on_photo)
             self._tasks.append(asyncio.create_task(fetcher.run(), name="photoframe"))
+        ma = self.cfg.music_assistant
+        if self.screen.running and ma.token:
+            from .ma_api import MusicAssistantApi, api_url
+
+            url = api_url(ma.url, self.cfg.sendspin.server_url)
+            if url:
+                api = MusicAssistantApi(url, ma.token, lambda: self.sendspin_id,
+                                        lambda media: self.screen.send("media", media))
+                self._tasks.append(asyncio.create_task(api.run(), name="music-assistant-api"))
+            else:
+                logger.warning("music_assistant.token is set but there is no address: "
+                               "set music_assistant.url (or sendspin.server_url)")
         if self.cfg.mqtt.host:
             from .mqtt import MqttBridge, make_entities
 
@@ -224,4 +237,5 @@ class FrameDaemon(daemon_mod.SendspinDaemon):
 
     def _attach_client(self, client: SendspinClient) -> None:
         super()._attach_client(client)
+        self.runtime.sendspin_id = self._args.identity.peer_id
         self.runtime.attach(client)

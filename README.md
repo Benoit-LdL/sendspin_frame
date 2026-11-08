@@ -28,8 +28,10 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
   including where and when it was taken, with a clock and the date. A small Music Assistant logo
   in the corner shows the connection: green when connected, red when not. The frame's rotation schedule
   is the one you set in Nextcloud. Photos crossfade.
-  When the slideshow keeps going during music, a small popup next to that logo shows the title
-  and artist. Long text scrolls.
+  When the slideshow keeps going during music, a small popup next to that logo shows what's
+  playing: an icon for music, radio, podcast or audiobook, then the title, artist and album,
+  station, podcast or book. Long text scrolls. The type and the station / show name come from
+  Music Assistant's API, which needs a token (see `[music_assistant]` in the example config).
 - **Light on the Pi.** It only redraws what changes: a progress tick rewrites a few pixel rows.
   Decoding and rendering run in a low-priority thread, so the audio has priority.
 - **Home Assistant control over MQTT.** Choose between the cover and the photo slideshow while
@@ -224,6 +226,7 @@ sendspin_frame/
   renderer.py    Pillow scenes (now playing, photo, clock), fonts, colours
   display.py     framebuffer output (RGB565 dithering / XRGB8888), PNG output for testing
   photoframe.py  Nextcloud Photo Frames client
+  ma_api.py      Music Assistant API client (media type + station / show name for the popup)
   config.py      TOML config
   state.py       thread-safe state shared between asyncio and the render thread
 tools/           preview renderer and fake server for testing

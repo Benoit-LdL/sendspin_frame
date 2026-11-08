@@ -117,6 +117,8 @@ def _screen_main(cfg: FrameConfig, inbox: mp.Queue, ready: Any) -> None:
                 state.set_playback(msg[1])
             elif kind == "track":
                 state.set_track(msg[1])
+            elif kind == "media":
+                state.set_media(msg[1])
             elif kind == "music_screen":
                 state.set_music_screen(msg[1])
                 logger.info("While music plays, showing: %s", msg[1])

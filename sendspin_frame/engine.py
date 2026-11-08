@@ -14,7 +14,7 @@ from PIL import Image
 from .config import FrameConfig
 from .display import Display
 from .renderer import Box, NowPlayingPopup, Renderer, Scene, draw_text
-from .state import SharedState, Snapshot, Track
+from .state import MediaInfo, SharedState, Snapshot, Track
 from .sysstats import StatsReader
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,29 @@ def pixel_shift_offset(max_px: int, period_s: float, now_wall: float) -> tuple[i
     radius = max_px if step % 2 == 0 else max_px / 2
     angle = (step // 2) * (math.tau / 8) + (0 if step % 2 == 0 else math.tau / 16)
     return (round(radius * math.cos(angle)), round(radius * math.sin(angle)))
+
+
+def popup_text(track: Track, media: MediaInfo | None) -> tuple[str, str]:
+    """The "now playing" popup line and its icon kind.
+
+    Without Music Assistant's info, a track without a length is taken to be a radio stream.
+    """
+    kind = media.kind if media else ("music" if track.duration_ms else "radio")
+    source = media.source if media else None
+    artist = track.artist or track.album_artist
+    if kind == "music":
+        parts = [track.title, artist, source or track.album]
+    elif kind == "radio":
+        parts = [source, track.title, artist]
+    else:  # podcast / audiobook: the show or book, then the episode or chapter
+        parts = [source, track.title]
+    seen: set[str] = set()
+    out = []
+    for part in parts:
+        if part and part.strip().casefold() not in seen:
+            seen.add(part.strip().casefold())
+            out.append(part.strip())
+    return "  ·  ".join(out), kind
 
 
 def _parse_window(spec: str) -> tuple[dt.time, dt.time] | None:
@@ -96,7 +119,7 @@ class Engine(threading.Thread):
         self._stats_bg: Image.Image | None = None  # the corner without the overlay
         self._stats_next = 0.0
         # "Now playing" popup next to the status badge, on the photo screen during music.
-        self._popup_want: tuple[str, bool] | None = None  # (text, paused)
+        self._popup_want: tuple[str, bool, str] | None = None  # (text, paused, kind)
         self._popup_start = 0.0  # when the current text first showed (scroll position)
         self._popup: NowPlayingPopup | None = None
         self._popup_bg: Image.Image | None = None  # the area without the popup
@@ -247,13 +270,14 @@ class Engine(threading.Thread):
 
     # ------------------------------------------------------------------ now playing popup
 
-    def _popup_content(self, mode: str, snap: Snapshot, now: float) -> tuple[str, bool] | None:
+    def _popup_content(self, mode: str, snap: Snapshot,
+                       now: float) -> tuple[str, bool, str] | None:
+        """(text, paused, media kind) for the popup, or None for no popup."""
         if mode != "photo" or not self.cfg.photos.show_now_playing or not self._music_on(snap, now):
             return None
-        t = snap.track
-        assert t is not None
-        text = "  ·  ".join(p for p in (t.title, t.artist or t.album_artist) if p)
-        return (text, snap.playback != "playing") if text else None
+        assert snap.track is not None
+        text, kind = popup_text(snap.track, snap.media)
+        return (text, snap.playback != "playing", kind) if text else None
 
     def _make_popup(self, now: float) -> None:
         """(Re)build the popup for the current content on the current background."""

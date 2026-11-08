@@ -242,6 +242,43 @@ def status_badge(size: int, connected: bool) -> Image.Image:
     return badge.resize((size, size), Image.Resampling.LANCZOS)
 
 
+@functools.cache
+def media_icon(kind: str, size: int) -> Image.Image:
+    """A small white-on-transparent glyph (as an "L" mask) for music, radio, podcast, audiobook."""
+    ss = 4  # drawn big, then scaled down for smooth edges
+    s = size * ss
+    mask = Image.new("L", (s, s), 0)
+    d = ImageDraw.Draw(mask)
+
+    def p(*xy: float) -> list[float]:
+        return [v * s for v in xy]
+
+    lw = max(1, int(s * 0.09))
+    if kind == "radio":
+        d.line(p(0.22, 0.34, 0.72, 0.08), fill=255, width=lw)  # antenna
+        d.rounded_rectangle(p(0.06, 0.32, 0.94, 0.9), radius=s * 0.1, fill=255)
+        d.ellipse(p(0.17, 0.45, 0.47, 0.75), fill=0)  # speaker
+        d.ellipse(p(0.25, 0.53, 0.39, 0.67), fill=255)
+        for y in (0.47, 0.6, 0.73):  # dial
+            d.line(p(0.58, y, 0.84, y), fill=0, width=max(1, lw // 2))
+    elif kind == "podcast":
+        d.rounded_rectangle(p(0.36, 0.04, 0.64, 0.56), radius=s * 0.14, fill=255)  # capsule
+        d.arc(p(0.2, 0.2, 0.8, 0.72), start=0, end=180, fill=255, width=lw)
+        d.line(p(0.5, 0.72, 0.5, 0.88), fill=255, width=lw)
+        d.line(p(0.3, 0.92, 0.7, 0.92), fill=255, width=lw)
+    elif kind == "audiobook":
+        d.polygon(p(0.04, 0.2, 0.47, 0.28, 0.47, 0.9, 0.04, 0.82), fill=255)  # open book
+        d.polygon(p(0.96, 0.2, 0.53, 0.28, 0.53, 0.9, 0.96, 0.82), fill=255)
+    else:  # music: two beamed eighth notes
+        d.ellipse(p(0.08, 0.66, 0.38, 0.9), fill=255)
+        d.ellipse(p(0.6, 0.58, 0.9, 0.82), fill=255)
+        d.line(p(0.34, 0.78, 0.34, 0.2), fill=255, width=lw)
+        d.line(p(0.86, 0.7, 0.86, 0.12), fill=255, width=lw)
+        d.polygon(p(0.34 - 0.045, 0.2, 0.86 + 0.045, 0.1, 0.86 + 0.045, 0.27, 0.34 - 0.045, 0.37),
+                  fill=255)
+    return mask.resize((size, size), Image.Resampling.LANCZOS)
+
+
 def fmt_time(ms: int) -> str:
     s = max(0, int(ms // 1000))
     h, rem = divmod(s, 3600)
@@ -505,11 +542,12 @@ class Renderer:
         x0 = max(W // 2, x1 - int(min(W, H) * 0.4))
         return (x0, by, x1, by1)
 
-    def now_playing_popup(self, bg: Image.Image, text: str, paused: bool, start: float,
-                          fps: float) -> NowPlayingPopup:
-        """`bg`: the screen under `popup_box()`. `start`: monotonic time the text first showed."""
+    def now_playing_popup(self, bg: Image.Image, text: str, paused: bool, kind: str | None,
+                          start: float, fps: float) -> NowPlayingPopup:
+        """`bg`: the screen under `popup_box()`. `kind`: icon to show (see `media_icon`), or
+        None. `start`: monotonic time the text first showed."""
         font = self.fonts.get("medium", bg.height * 0.44)
-        return NowPlayingPopup(bg, text, paused, start, font, min(self.size) * 0.05, fps)
+        return NowPlayingPopup(bg, text, paused, kind, start, font, min(self.size) * 0.05, fps)
 
     # ---------------------------------------------------------------------- clock
 
@@ -584,7 +622,7 @@ def _minute_key(now: float) -> Hashable:
 
 
 class NowPlayingPopup:
-    """A small dark pill with one line of text, right-aligned in its box.
+    """A small dark pill with an icon and one line of text, right-aligned in its box.
 
     Text that doesn't fit scrolls to the left in a loop (with a short rest at the start of
     each loop), fading out at both edges. Everything is pre-rendered, so a scroll step is a
@@ -593,27 +631,36 @@ class NowPlayingPopup:
 
     REST_S = 2.5  # rest at the start of each loop, so the beginning can be read
 
-    def __init__(self, bg: Image.Image, text: str, paused: bool, start: float,
+    def __init__(self, bg: Image.Image, text: str, paused: bool, kind: str | None, start: float,
                  font: ImageFont.FreeTypeFont, speed: float, fps: float) -> None:
-        self.content = (text, paused)
+        self.content = (text, paused, kind)
         self.start = start
         self.speed = max(1.0, speed)  # pixels per second
         self.fps = max(1.0, fps)
         w, h = bg.size
-        self.pad = pad = int(h * 0.45)
-        self.fade = fade = max(2, int(h * 0.3))
+        pad = int(h * 0.45)
+        self.fade = fade = max(2, int(h * 0.22))
+        icon_s = int(h * 0.48)
+        icon_lead = int(h * 0.36)  # left of the icon (the pill's rounded end)
+        # The text starts here (from the pill's left edge); the gap after the icon is wider
+        # than the fade, so scrolling text fades out before it reaches the icon.
+        self.lead = lead = icon_lead + icon_s + fade + max(2, int(h * 0.16)) if kind else pad
         text_w = math.ceil(font.getlength(text))
-        inner = w - 2 * pad
+        inner = w - lead - pad
         self.scrolls = text_w > inner
         alpha = 0.55 if paused else 0.92
 
-        pill_w = w if self.scrolls else min(w, text_w + 2 * pad)
+        pill_w = w if self.scrolls else min(w, lead + text_w + pad)
+        px = w - pill_w
         self.pill = bg.copy()
         shape = rounded_mask((pill_w, h), h // 2).point(lambda v: v * 150 // 255)
-        self.pill.paste((0, 0, 0), (w - pill_w, 0), shape)
+        self.pill.paste((0, 0, 0), (px, 0), shape)
+        if kind:
+            icon = media_icon(kind, icon_s).point(lambda v: int(v * alpha))
+            self.pill.paste(WHITE, (px + icon_lead, (h - icon_s) // 2), icon)
 
         if not self.scrolls:
-            draw_text(self.pill, (w - pill_w + pad, h / 2), text, font, alpha=alpha, anchor="lm")
+            draw_text(self.pill, (px + lead, h / 2), text, font, alpha=alpha, anchor="lm")
             return
         # Two copies of the text, one loop apart: any window of one loop is a seamless crop.
         self.period = text_w + int(font.size * 2.5)
@@ -656,5 +703,5 @@ class NowPlayingPopup:
         if self.scrolls:
             off = self.offset(now)
             mask = self.strip.crop((off, 0, off + self.win_w, img.height))
-            img.paste(WHITE, (self.pad - self.fade, 0), ImageChops.multiply(mask, self.edges))
+            img.paste(WHITE, (self.lead - self.fade, 0), ImageChops.multiply(mask, self.edges))
         return img

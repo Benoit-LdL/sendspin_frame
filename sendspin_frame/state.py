@@ -35,6 +35,17 @@ class Track:
         return (self.title, self.artist, self.album, self.album_artist)
 
 
+MEDIA_KINDS = ("music", "radio", "podcast", "audiobook")
+
+
+@dataclass(frozen=True)
+class MediaInfo:
+    """What Music Assistant says this player is playing (Sendspin itself doesn't tell)."""
+
+    kind: str = "music"  # one of MEDIA_KINDS
+    source: str | None = None  # radio station, podcast / audiobook name, or album
+
+
 @dataclass(frozen=True)
 class Photo:
     image: Image.Image
@@ -57,6 +68,7 @@ class Snapshot:
     show_stats: bool  # CPU / RAM / temperature overlay
     pairing_code: str | None  # shown full screen while Music Assistant pairs with us
     pairing_since: float
+    media: MediaInfo | None  # from the Music Assistant API, None = not known
     version: int
 
 
@@ -70,7 +82,7 @@ class SharedState:
             connected=False, server_name=None, playback="stopped",
             playback_since=time.monotonic(), track=None, artwork=None,
             artwork_serial=0, photo=None, music_screen="cover", show_stats=False,
-            pairing_code=None, pairing_since=0.0, version=0,
+            pairing_code=None, pairing_since=0.0, media=None, version=0,
         )
 
     def snapshot(self) -> Snapshot:
@@ -109,6 +121,9 @@ class SharedState:
 
     def set_show_stats(self, show: bool) -> None:
         self._update(show_stats=show)
+
+    def set_media(self, media: MediaInfo | None) -> None:
+        self._update(media=media)
 
     def set_pairing_code(self, code: str | None) -> None:
         self._update(pairing_code=code, pairing_since=time.monotonic())

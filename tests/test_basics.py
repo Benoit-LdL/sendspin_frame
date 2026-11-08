@@ -318,3 +318,55 @@ def test_now_playing_popup_on_photos_scrolls_long_text():
     engine._tick()
     assert engine._popup is None
     assert engine._frame.crop(pbox).tobytes() == empty
+
+
+def test_popup_text_and_media_kind():
+    from sendspin_frame.engine import popup_text
+    from sendspin_frame.state import MediaInfo
+
+    song = Track(title="Song", artist="Band", album="Album", duration_ms=200_000)
+    assert popup_text(song, None) == ("Song  ·  Band  ·  Album", "music")
+    stream = Track(title="Song", artist="Band", album="Studio Brussel")
+    assert popup_text(stream, None)[1] == "radio"  # no length: guessed to be radio
+    assert popup_text(stream, MediaInfo("radio", "Studio Brussel")) == (
+        "Studio Brussel  ·  Song  ·  Band", "radio")
+    ep = Track(title="Episode 1", artist="The Show")
+    assert popup_text(ep, MediaInfo("podcast", "The Show")) == ("The Show  ·  Episode 1", "podcast")
+    book = Track(title="Dune", artist="Frank Herbert", duration_ms=1)
+    assert popup_text(book, MediaInfo("audiobook", "Dune")) == ("Dune", "audiobook")
+
+
+def test_music_assistant_api_parsing():
+    from sendspin_frame.ma_api import api_url, find_player, media_from_player, media_from_queue
+    from sendspin_frame.state import MediaInfo
+
+    assert api_url("", "ws://10.0.0.5:8927/sendspin") == "ws://10.0.0.5:8095/ws"
+    assert api_url("http://ma.local:8095", "") == "ws://ma.local:8095/ws"
+    assert api_url("https://ma.example.com", "") == "wss://ma.example.com:8095/ws"
+    assert api_url("", "") is None
+
+    players = [
+        {"player_id": "abc", "type": "protocol"},
+        {"player_id": "up1234abcd", "type": "player",
+         "output_protocols": [{"output_protocol_id": "abc"}]},
+    ]
+    assert find_player(players, "abc")["player_id"] == "up1234abcd"
+    assert find_player(players[:1], "abc")["player_id"] == "abc"  # not wrapped yet
+    assert find_player(players, "zzz") is None
+
+    def queue(media_item):
+        return {"queue_id": "q", "current_item": {"name": "Item", "media_item": media_item}}
+
+    assert media_from_queue(queue({"media_type": "radio", "name": "Studio Brussel"})) == \
+        MediaInfo("radio", "Studio Brussel")
+    assert media_from_queue(queue({"media_type": "podcast_episode", "name": "Ep 1",
+                                   "podcast": {"name": "The Show"}})) == \
+        MediaInfo("podcast", "The Show")
+    assert media_from_queue(queue({"media_type": "audiobook", "name": "Dune"})) == \
+        MediaInfo("audiobook", "Dune")
+    assert media_from_queue(queue({"media_type": "track", "name": "Song",
+                                   "album": {"name": "Kid A"}})) == MediaInfo("music", "Kid A")
+    assert media_from_queue(queue({"media_type": "track", "album": None})) == MediaInfo("music")
+    assert media_from_queue({"current_item": None}) is None
+    assert media_from_player({"current_media": {"media_type": "radio"}}) == MediaInfo("radio")
+    assert media_from_player({"current_media": None}) is None

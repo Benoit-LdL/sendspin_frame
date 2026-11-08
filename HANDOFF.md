@@ -83,6 +83,13 @@ docs/screenshots/            README screenshots
 - Also: `sendspin.delay_ms`, `sendspin.server_url` (MA missed a restarted player over mDNS),
   Music Assistant logo badge (green/red) on the photo screen, CPU/RAM/temp overlay
   (`sysstats.py`, drawn by the engine in the top-left corner on every screen).
+- "Now playing" popup next to the badge on the photo screen (`photos.show_now_playing`), with
+  an icon (music / radio / podcast / audiobook) and the album / station / show name. Sendspin
+  doesn't send the media type, so `ma_api.py` asks Music Assistant's websocket API
+  (ws://host:8095/ws, long-lived token in `music_assistant.token`). Our Sendspin id is a
+  "protocol player" in MA; the player owning the queue is the one listing our id in
+  `output_protocols` (found via `players/all` with `return_protocol_players`). **Not yet
+  tested against a real Music Assistant.**
 
 ## Bugs found and fixed during testing
 
