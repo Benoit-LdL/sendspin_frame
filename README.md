@@ -28,6 +28,8 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
   including where and when it was taken, with a clock and the date. A small Music Assistant logo
   in the corner shows the connection: green when connected, red when not. The frame's rotation schedule
   is the one you set in Nextcloud. Photos crossfade.
+  When the slideshow keeps going during music, a small popup next to that logo shows the title
+  and artist. Long text scrolls.
 - **Light on the Pi.** It only redraws what changes: a progress tick rewrites a few pixel rows.
   Decoding and rendering run in a low-priority thread, so the audio has priority.
 - **Home Assistant control over MQTT.** Choose between the cover and the photo slideshow while

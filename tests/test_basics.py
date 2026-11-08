@@ -261,3 +261,60 @@ def test_pairing_code_takes_over_the_screen():
     assert engine._build("pairing", state.snapshot()).key[1] == "123 456"
     state.set_pairing_code(None)
     assert engine._mode(state.snapshot(), time.monotonic()) == "clock"
+
+
+def test_now_playing_popup_on_photos_scrolls_long_text():
+    from sendspin_frame.config import FrameConfig
+    from sendspin_frame.display import Display
+    from sendspin_frame.engine import Engine
+
+    class Capture(Display):
+        width, height = 640, 360
+
+        def __init__(self):
+            self.boxes = []
+
+        def show(self, img, box=None, fast=False):
+            self.boxes.append(box)
+
+    cfg = FrameConfig()
+    cfg.display.transition_ms = 0
+    disp = Capture()
+    state = SharedState()
+    engine = Engine(cfg, state, disp)
+    state.set_photo(Photo(Image.new("RGB", (640, 360), (128, 128, 128)), serial=1))
+    state.set_connection(True, "MA")
+    engine._tick()  # idle photos: no popup
+    assert engine._popup is None
+    pbox = engine.renderer.popup_box()
+    empty = engine._frame.crop(pbox).tobytes()
+
+    state.set_music_screen("photos")
+    state.set_track(Track(title="Short", artist="A"))
+    state.set_playback("playing")
+    engine._tick()
+    popup = engine._popup
+    assert popup is not None and not popup.scrolls
+    assert engine._frame.crop(pbox).tobytes() != empty
+    assert disp.boxes[-1] == pbox  # only the popup was redrawn
+
+    state.set_track(Track(title="A Really Quite Long Song Title That Will Never Fit (Live)",
+                          artist="Some Artist featuring Another Artist"))
+    engine._tick()
+    popup = engine._popup
+    assert popup.scrolls
+    t0 = popup.start
+    assert popup.offset(t0) == 0 and popup.next_change(t0) == pytest.approx(popup.REST_S)
+    later = t0 + popup.REST_S + 1
+    assert popup.offset(later) > 0
+    assert popup.draw(t0).tobytes() != popup.draw(later).tobytes()
+
+    state.set_playback("paused")
+    engine._tick()
+    assert engine._popup.offset(later) == 0  # paused: no scrolling
+
+    state.set_playback("stopped")
+    state.set_track(None)
+    engine._tick()
+    assert engine._popup is None
+    assert engine._frame.crop(pbox).tobytes() == empty

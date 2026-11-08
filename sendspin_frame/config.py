@@ -82,6 +82,9 @@ class PhotosConfig:
     show_info: bool = True
     # Small Music Assistant logo in the top-right corner: green = connected, red = not.
     show_status: bool = True
+    # While music plays over the photos: title and artist in a small popup next to that logo
+    # (long text scrolls).
+    show_now_playing: bool = True
     # Never poll faster than this, even if the frame rotates every minute.
     min_refresh: int = 20
     # Verify TLS certificates (set false for self-signed Nextcloud certs).

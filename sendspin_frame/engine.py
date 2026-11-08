@@ -13,7 +13,7 @@ from PIL import Image
 
 from .config import FrameConfig
 from .display import Display
-from .renderer import Box, Renderer, Scene, draw_text
+from .renderer import Box, NowPlayingPopup, Renderer, Scene, draw_text
 from .state import SharedState, Snapshot, Track
 from .sysstats import StatsReader
 
@@ -28,6 +28,10 @@ SETTLE_S = 0.25
 PAIRING_TIMEOUT_S = 300
 # How often the CPU / RAM / temperature overlay is refreshed.
 STATS_INTERVAL_S = 5.0
+# Frame rate of the scrolling "now playing" popup on the photo screen. A rotated display
+# rewrites the whole screen for every update, so it scrolls in fewer, bigger steps.
+POPUP_FPS = 20
+POPUP_FPS_ROTATED = 5
 
 
 def pixel_shift_offset(max_px: int, period_s: float, now_wall: float) -> tuple[int, int]:
@@ -91,6 +95,12 @@ class Engine(threading.Thread):
         self._stats_on = False
         self._stats_bg: Image.Image | None = None  # the corner without the overlay
         self._stats_next = 0.0
+        # "Now playing" popup next to the status badge, on the photo screen during music.
+        self._popup_want: tuple[str, bool] | None = None  # (text, paused)
+        self._popup_start = 0.0  # when the current text first showed (scroll position)
+        self._popup: NowPlayingPopup | None = None
+        self._popup_bg: Image.Image | None = None  # the area without the popup
+        self._popup_key = None
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -98,16 +108,20 @@ class Engine(threading.Thread):
 
     # ------------------------------------------------------------------ decisions
 
-    def _mode(self, snap: Snapshot, now: float) -> str:
-        if snap.pairing_code and now - snap.pairing_since < PAIRING_TIMEOUT_S:
-            return "pairing"
+    def _music_on(self, snap: Snapshot, now: float) -> bool:
+        """Music is playing, or paused / stopped only a short while ago."""
         np_cfg = self.cfg.now_playing
         age = now - snap.playback_since
-        if snap.connected and snap.track is not None and (
+        return snap.connected and snap.track is not None and (
             snap.playback == "playing"
             or (snap.playback == "paused" and age < np_cfg.paused_timeout)
             or (snap.playback == "stopped" and age < np_cfg.stopped_timeout)
-        ):
+        )
+
+    def _mode(self, snap: Snapshot, now: float) -> str:
+        if snap.pairing_code and now - snap.pairing_since < PAIRING_TIMEOUT_S:
+            return "pairing"
+        if self._music_on(snap, now):
             if snap.music_screen == "photos" and snap.photo is not None:
                 return "photo"
             return "np"
@@ -231,6 +245,44 @@ class Engine(threading.Thread):
         self._stats_on = want
         self._paste(region, self._stats_box())
 
+    # ------------------------------------------------------------------ now playing popup
+
+    def _popup_content(self, mode: str, snap: Snapshot, now: float) -> tuple[str, bool] | None:
+        if mode != "photo" or not self.cfg.photos.show_now_playing or not self._music_on(snap, now):
+            return None
+        t = snap.track
+        assert t is not None
+        text = "  ·  ".join(p for p in (t.title, t.artist or t.album_artist) if p)
+        return (text, snap.playback != "playing") if text else None
+
+    def _make_popup(self, now: float) -> None:
+        """(Re)build the popup for the current content on the current background."""
+        self._popup, self._popup_key = None, None
+        if self._popup_want is None or self._popup_bg is None:
+            return
+        if self._scene is None or self._scene.key[0] != "photo":
+            return
+        fps = POPUP_FPS_ROTATED if self.cfg.display.rotate else POPUP_FPS
+        self._popup = self.renderer.now_playing_popup(self._popup_bg, *self._popup_want,
+                                                      self._popup_start, fps)
+
+    def _update_popup(self, now: float) -> None:
+        """Show / hide / change the popup, and move the scrolling text along."""
+        if self._frame is None or self._popup_bg is None:
+            return
+        current = self._popup.content if self._popup else None
+        if current != self._popup_want:
+            self._make_popup(now)
+            if self._popup is None:
+                if current is not None:
+                    self._paste(self._popup_bg, self.renderer.popup_box())
+                return
+        if self._popup is not None:
+            key = self._popup.key(now)
+            if key != self._popup_key:
+                self._paste(self._popup.draw(now), self.renderer.popup_box())
+                self._popup_key = key
+
     def _crossfade(self, new: Image.Image) -> None:
         old = self._shown
         ms = self.cfg.display.transition_ms
@@ -263,12 +315,18 @@ class Engine(threading.Thread):
             region = self._stats_bg.copy()
             self._draw_stats(region)
             frame.paste(region, box[:2])
+        self._scene = scene
+        pbox = self.renderer.popup_box()
+        self._popup_bg = frame.crop(pbox)
+        self._make_popup(now)
+        if self._popup is not None:
+            frame.paste(self._popup.draw(now), pbox[:2])
+            self._popup_key = self._popup.key(now)
         if animate:
             self._crossfade(frame)
         else:
             self._show_full(frame)
         self._frame = frame
-        self._scene = scene
         self._dyn_key = scene.dynamic_key(now) if scene.dynamic_key else None
 
     # ------------------------------------------------------------------ loop
@@ -306,6 +364,11 @@ class Engine(threading.Thread):
             self._scene = None
         self._update_pixel_shift()
 
+        want = self._popup_content(mode, snap, now)
+        if want is not None and (self._popup_want is None or want[0] != self._popup_want[0]):
+            self._popup_start = now  # new text: scroll from the start
+        self._popup_want = want
+
         key = self._scene_key(mode, snap)
         if self._scene is None or self._scene.key != key:
             if not self._ready_to_build(mode, snap, key, now):
@@ -326,9 +389,12 @@ class Engine(threading.Thread):
                     self._paste(*result)
                 self._dyn_key = dkey
         self._update_stats(snap, now)
+        self._update_popup(now)
         wake = 1.0
         if self._stats_on:
             wake = max(0.05, min(wake, self._stats_next - now))
+        if self._popup is not None:
+            wake = max(0.02, min(wake, self._popup.next_change(now)))
 
         if mode == "np":
             # Wake shortly after the next whole second of track position.

@@ -12,13 +12,14 @@ import functools
 import glob
 import hashlib
 import logging
+import math
 import os
 import time
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
 from .config import FrameConfig, StyleConfig
 from .state import Photo, Track
@@ -473,9 +474,9 @@ class Renderer:
                 draw_text(base, (W - m, y), place, f_place, alpha=0.95, anchor="rd", shadow=0.6)
 
         if pc.show_status and connected is not None:
-            bs = max(20, int(k * 0.055))
-            badge = status_badge(bs, connected)
-            base.paste(badge, (W - m // 2 - bs, m // 2), badge)
+            bx, by, bx1, _ = self.badge_box()
+            badge = status_badge(bx1 - bx, connected)
+            base.paste(badge, (bx, by), badge)
 
         if not (pc.show_clock or pc.show_date):
             return Scene(key, base)
@@ -485,6 +486,30 @@ class Renderer:
         box = (0, int(H * 0.55), int(W * 0.55), H)
         return Scene(key, base, box,
                      self._clock_drawer(box, f_clock, f_date, m, "left"), _minute_key)
+
+    def badge_box(self) -> Box:
+        """Where the Music Assistant badge sits on the photo screen (top-right corner)."""
+        W, H = self.size
+        k = min(W, H)
+        m = int(k * 0.06)
+        bs = max(20, int(k * 0.055))
+        x, y = W - m // 2 - bs, m // 2
+        return (x, y, x + bs, y + bs)
+
+    def popup_box(self) -> Box:
+        """The area of the 'now playing' popup: left of the badge, never in the left half
+        (that's where the stats overlay goes)."""
+        W, H = self.size
+        bx, by, bx1, by1 = self.badge_box()
+        x1 = bx - max(4, (bx1 - bx) // 4)
+        x0 = max(W // 2, x1 - int(min(W, H) * 0.4))
+        return (x0, by, x1, by1)
+
+    def now_playing_popup(self, bg: Image.Image, text: str, paused: bool, start: float,
+                          fps: float) -> NowPlayingPopup:
+        """`bg`: the screen under `popup_box()`. `start`: monotonic time the text first showed."""
+        font = self.fonts.get("medium", bg.height * 0.44)
+        return NowPlayingPopup(bg, text, paused, start, font, min(self.size) * 0.05, fps)
 
     # ---------------------------------------------------------------------- clock
 
@@ -556,3 +581,80 @@ class Renderer:
 
 def _minute_key(now: float) -> Hashable:
     return time.strftime("%Y%m%d%H%M")
+
+
+class NowPlayingPopup:
+    """A small dark pill with one line of text, right-aligned in its box.
+
+    Text that doesn't fit scrolls to the left in a loop (with a short rest at the start of
+    each loop), fading out at both edges. Everything is pre-rendered, so a scroll step is a
+    crop and a paste. Paused: dimmed and not scrolling.
+    """
+
+    REST_S = 2.5  # rest at the start of each loop, so the beginning can be read
+
+    def __init__(self, bg: Image.Image, text: str, paused: bool, start: float,
+                 font: ImageFont.FreeTypeFont, speed: float, fps: float) -> None:
+        self.content = (text, paused)
+        self.start = start
+        self.speed = max(1.0, speed)  # pixels per second
+        self.fps = max(1.0, fps)
+        w, h = bg.size
+        self.pad = pad = int(h * 0.45)
+        self.fade = fade = max(2, int(h * 0.3))
+        text_w = math.ceil(font.getlength(text))
+        inner = w - 2 * pad
+        self.scrolls = text_w > inner
+        alpha = 0.55 if paused else 0.92
+
+        pill_w = w if self.scrolls else min(w, text_w + 2 * pad)
+        self.pill = bg.copy()
+        shape = rounded_mask((pill_w, h), h // 2).point(lambda v: v * 150 // 255)
+        self.pill.paste((0, 0, 0), (w - pill_w, 0), shape)
+
+        if not self.scrolls:
+            draw_text(self.pill, (w - pill_w + pad, h / 2), text, font, alpha=alpha, anchor="lm")
+            return
+        # Two copies of the text, one loop apart: any window of one loop is a seamless crop.
+        self.period = text_w + int(font.size * 2.5)
+        self.strip = Image.new("L", (fade + 2 * self.period, h), 0)
+        d = ImageDraw.Draw(self.strip)
+        for i in range(2):
+            d.text((fade + i * self.period, h / 2), text, font=font, fill=int(255 * alpha),
+                   anchor="lm")
+        # The text window reaches `fade` pixels into the padding on both sides and fades there.
+        self.win_w = inner + 2 * fade
+        ramp = Image.linear_gradient("L").rotate(90, expand=True).resize((fade, h))  # 0 -> 255
+        self.edges = Image.new("L", (self.win_w, h), 255)
+        self.edges.paste(ramp, (0, 0))
+        self.edges.paste(ramp.transpose(Image.Transpose.FLIP_LEFT_RIGHT), (self.win_w - fade, 0))
+
+    def _cycle(self) -> float:
+        return self.REST_S + self.period / self.speed
+
+    def offset(self, now: float) -> int:
+        if not self.scrolls or self.content[1]:
+            return 0
+        t = (now - self.start) % self._cycle()
+        return int(max(0.0, t - self.REST_S) * self.speed)
+
+    def key(self, now: float) -> Hashable:
+        """Changes when the popup looks different."""
+        return self.offset(now)
+
+    def next_change(self, now: float) -> float:
+        """Seconds until the popup should be redrawn."""
+        if not self.scrolls or self.content[1]:
+            return 3600.0
+        t = (now - self.start) % self._cycle()
+        if t < self.REST_S:
+            return self.REST_S - t
+        return max(1 / self.fps, 1 / self.speed)
+
+    def draw(self, now: float) -> Image.Image:
+        img = self.pill.copy()
+        if self.scrolls:
+            off = self.offset(now)
+            mask = self.strip.crop((off, 0, off + self.win_w, img.height))
+            img.paste(WHITE, (self.pad - self.fade, 0), ImageChops.multiply(mask, self.edges))
+        return img

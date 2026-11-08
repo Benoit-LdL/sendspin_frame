@@ -66,6 +66,9 @@ show_date = true
 show_info = true
 # Small Music Assistant logo in the top-right corner: green = connected, red = not.
 show_status = true
+# While music plays over the photos (now_playing.screen = "photos"): title and artist in a
+# small popup next to that logo. Long text scrolls.
+show_now_playing = true
 # Minimum seconds between checks for a new photo. The frame's own rotation
 # schedule (set in Nextcloud) decides when the photo actually changes.
 min_refresh = 20

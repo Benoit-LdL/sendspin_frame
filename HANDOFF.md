@@ -125,8 +125,8 @@ named **"Pi Frame Test"** may still be listed in MA and can be deleted there.
    `sendspin.audio_device`) in `/etc/sendspin-frame/config.toml`, then reboot.
 3. Check `cat /sys/class/graphics/fb0/bits_per_pixel`, `journalctl -u sendspin-frame -e`, and
    CPU use during crossfades (lower `transition_fps` or set `transition_ms = 0` if needed).
-4. Ideas not built yet: touchscreen controls (controller role: play/pause/next), a
-   now-playing overlay on photos, and CJK font fallback.
+4. Ideas not built yet: touchscreen controls (controller role: play/pause/next), and CJK font
+   fallback. (Done: a "now playing" popup next to the badge on the photo screen, `photos.show_now_playing`.)
 
 ## Resuming development on a desktop
 
