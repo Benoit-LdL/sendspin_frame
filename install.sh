@@ -28,7 +28,7 @@ fi
 
 say "Installing system packages"
 apt-get update -qq
-apt-get install -y -qq libportaudio2 alsa-utils fonts-dejavu-core curl unzip ca-certificates
+apt-get install -y -qq libportaudio2 alsa-utils fonts-dejavu-core curl unzip ca-certificates     git sudo
 
 if ! command -v uv >/dev/null 2>&1; then
     say "Installing uv (Python package manager)"
@@ -50,7 +50,8 @@ tar -C "$SRC_DIR" --exclude=.git --exclude=.venv --exclude=__pycache__ --exclude
 # sendspin needs Python >= 3.12; uv downloads one if the system Python is older (Bookworm).
 export UV_PYTHON_INSTALL_DIR="$APP_DIR/python"
 uv venv --quiet --allow-existing --python ">=3.12" "$APP_DIR/.venv"
-uv pip install --quiet --python "$APP_DIR/.venv/bin/python" "$APP_DIR"
+# --upgrade: also move the dependencies to their newest allowed versions (sendspin stays pinned).
+uv pip install --quiet --upgrade --python "$APP_DIR/.venv/bin/python" "$APP_DIR"
 
 if [[ ! -f "$FONT_DIR/Inter-Regular.ttf" ]]; then
     say "Installing the Inter font"
@@ -76,6 +77,34 @@ fi
 # The config can hold the MQTT password: readable by root and the service only.
 chown root:"$SVC_USER" "$CONF_DIR/config.toml"
 chmod 640 "$CONF_DIR/config.toml"
+
+say "Update helper for Home Assistant"
+# The service runs unprivileged; this helper (and only this one) may be run as root by it, for
+# the update checks and the "Update ..." buttons in Home Assistant. See sendspin_frame/update_helper.py.
+install -m 755 "$APP_DIR/bin/sendspin-frame-update" /usr/local/sbin/sendspin-frame-update
+printf '%s
+' "# Lets the sendspin-frame service check for and install updates (Home Assistant buttons)."     "$SVC_USER ALL=(root) NOPASSWD: /usr/local/sbin/sendspin-frame-update" > /etc/sudoers.d/sendspin-frame.tmp
+chmod 0440 /etc/sudoers.d/sendspin-frame.tmp
+if visudo -cf /etc/sudoers.d/sendspin-frame.tmp >/dev/null; then
+    mv /etc/sudoers.d/sendspin-frame.tmp /etc/sudoers.d/sendspin-frame
+else
+    rm -f /etc/sudoers.d/sendspin-frame.tmp
+    echo "WARNING: could not install the sudoers rule; the update buttons won't work."
+fi
+# Remember where this code came from, so "Update sendspin-frame" knows what to fetch.
+if git -c safe.directory='*' -C "$SRC_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    branch="$(git -c safe.directory='*' -C "$SRC_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    origin="$(git -c safe.directory='*' -C "$SRC_DIR" remote get-url origin 2>/dev/null || true)"
+    commit="$(git -c safe.directory='*' -C "$SRC_DIR" rev-parse HEAD 2>/dev/null || true)"
+    [[ "$branch" == "HEAD" ]] && origin=""   # detached checkout: nothing to follow
+    printf 'ORIGIN=%s
+BRANCH=%s
+COMMIT=%s
+' "$origin" "$branch" "$commit" > "$CONF_DIR/update.conf"
+    chmod 644 "$CONF_DIR/update.conf"
+else
+    echo "Not a git checkout: the \"Update sendspin-frame\" button will only upgrade the Python packages."
+fi
 
 say "Setting up the systemd service"
 cp "$APP_DIR/systemd/sendspin-frame.service" /etc/systemd/system/

@@ -1,7 +1,7 @@
 # sendspin-frame: project history & handoff
 
 Notes on what was built so far and why, so work can resume in a new session (human or AI).
-Last updated: 2026-11-06.
+Last updated: 2026-11-10.
 
 ## Goal
 
@@ -37,7 +37,8 @@ sendspin_frame/config.py     TOML config (dataclasses, validation)
 sendspin_frame/state.py      thread-safe shared state (asyncio <-> render thread)
 tools/preview.py             render sample screens to PNG
 tools/test_server.py         fake Music Assistant + fake Photo Frames, for end-to-end tests
-tests/test_basics.py         11 unit tests (config, rendering, RGB565, letterbox trim, ...)
+tests/test_basics.py         unit tests (config, rendering, RGB565, letterbox trim, MQTT, ...)
+tests/test_updates.py        update helper parsing, UpdateManager with a fake helper, entities
 install.sh                   Pi installer (uv, venv in /opt/sendspin-frame, Inter font, user
                              `sendspin`, systemd, disables getty@tty1, cmdline.txt tweaks)
 systemd/sendspin-frame.service
@@ -83,6 +84,17 @@ docs/screenshots/            README screenshots
 - Also: `sendspin.delay_ms`, `sendspin.server_url` (MA missed a restarted player over mDNS),
   Music Assistant logo badge (green/red) on the photo screen, CPU/RAM/temp overlay
   (`sysstats.py`, drawn by the engine in the top-left corner on every screen).
+- Updates from Home Assistant (2026-11-10): `updates.py` checks on a schedule through a root
+  helper (`update_helper.py`, run as `sudo -n /usr/local/sbin/sendspin-frame-update`, allowed by
+  `/etc/sudoers.d/sendspin-frame`, both installed by install.sh). Sensors "System package
+  updates" / "sendspin-frame updates" (counts, lists in attributes), "Update status", and
+  buttons Check / Update system packages / Update sendspin-frame. The updates run as a transient
+  unit (`systemd-run --unit sendspin-frame-update --wait`), so the restart that install.sh does
+  can't kill dpkg. install.sh writes `/etc/sendspin-frame/update.conf` (ORIGIN / BRANCH /
+  COMMIT of the checkout it ran from); the helper keeps its own clone in
+  `/usr/local/src/sendspin-frame`. install.sh now runs `uv pip install --upgrade`, so
+  dependencies move within the pyproject constraints (sendspin stays pinned, but its own
+  dependencies such as aiosendspin may move). **Not yet tested on the Pi.**
 - "Now playing" popup next to the badge on the photo screen (`photos.show_now_playing`), with
   an icon (music / radio / podcast / audiobook) and the album / station / show name. Sendspin
   doesn't send the media type, so `ma_api.py` asks Music Assistant's websocket API

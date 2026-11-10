@@ -92,6 +92,19 @@ username = ""
 password = ""
 discovery_prefix = "homeassistant"
 
+[updates]
+# Updates from Home Assistant (needs [mqtt]): the device gets "System package updates" and
+# "sendspin-frame updates" counters, an "Update status" sensor and three buttons: "Check for
+# updates", "Update system packages" (apt full-upgrade) and "Update sendspin-frame" (fetches
+# the newest code from the git origin it was installed from, re-runs install.sh, which also
+# upgrades the Python packages, and restarts). The buttons run through a small root helper
+# that install.sh installs with a sudoers rule (/etc/sudoers.d/sendspin-frame).
+enabled = true
+# Hours between automatic checks (0 = only on the "Check for updates" button).
+check_hours = 6
+# The root helper. Normally no need to change.
+helper = "/usr/local/sbin/sendspin-frame-update"
+
 [music_assistant]
 # Music Assistant's own API, so the "now playing" popup on the photos can show whether it's
 # music, radio, a podcast or an audiobook, with the album / station / podcast / book name.

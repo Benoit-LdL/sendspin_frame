@@ -1,0 +1,6 @@
+#!/bin/sh
+# Root helper for the update checks / "Update" buttons in Home Assistant.
+# Installed to /usr/local/sbin by install.sh; the sendspin service user may run it through
+# sudo (see /etc/sudoers.d/sendspin-frame). All the work is in sendspin_frame/update_helper.py.
+#   sendspin-frame-update check | system | app
+exec /opt/sendspin-frame/.venv/bin/python -I -m sendspin_frame.update_helper "$@"

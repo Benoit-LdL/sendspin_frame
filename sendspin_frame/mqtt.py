@@ -3,12 +3,16 @@
 Creates a device with:
   - a "Screen during music" select (Cover art / Photo slideshow)
   - a "System stats on screen" switch (CPU / RAM / temperature overlay)
-Their states are published as retained messages, so the choices survive restarts of
-sendspin-frame and of Home Assistant.
+  - with [updates]: "System package updates" and "sendspin-frame updates" counters, an
+    "Update status" sensor, and "Check for updates" / "Update system packages" /
+    "Update sendspin-frame" buttons (see updates.py)
+The select and switch states are published as retained messages, so the choices survive
+restarts of sendspin-frame and of Home Assistant.
 
 Topics (<id> is the player name, lower case, e.g. "tv"):
     sendspin_frame/<id>/status              "online" / "offline" (availability, last will)
     sendspin_frame/<id>/<entity>            current value (retained)
+    sendspin_frame/<id>/<entity>/attributes extra attributes of a sensor (JSON, retained)
     sendspin_frame/<id>/<entity>/set        commands from Home Assistant
 """
 
@@ -21,7 +25,7 @@ import logging
 import re
 import socket
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
@@ -32,25 +36,51 @@ from .config import MqttConfig
 logger = logging.getLogger(__name__)
 
 RESTORE_WAIT_S = 1.5
+PRESS = "PRESS"
 
 
 @dataclass
 class Entity:
-    """One Home Assistant entity, with the mapping between our values and MQTT payloads."""
+    """One Home Assistant entity, with the mapping between our values and MQTT payloads.
+
+    select / switch: `to_payload`, `get` and `set`. Their state is restored from the broker.
+    sensor: `get` (None = unknown, nothing published) and optionally `attributes`.
+    button: `press`.
+    `extra` holds more discovery options (unit_of_measurement, entity_category, ...).
+    """
 
     key: str  # topic part and unique-id suffix
-    component: str  # "select" | "switch"
+    component: str  # "select" | "switch" | "sensor" | "button"
     name: str
     icon: str
-    to_payload: dict[Any, str]  # our value -> MQTT payload
-    get: Callable[[], Any]
-    set: Callable[[Any], None]
+    to_payload: dict[Any, str] = field(default_factory=dict)  # our value -> MQTT payload
+    get: Callable[[], Any] | None = None
+    set: Callable[[Any], None] | None = None
+    press: Callable[[], None] | None = None
+    attributes: Callable[[], dict[str, Any]] | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def restorable(self) -> bool:
+        return self.set is not None and bool(self.to_payload)
+
+    @property
+    def has_command(self) -> bool:
+        return self.set is not None or self.press is not None
 
     def parse(self, payload: str) -> Any:
         for value, text in self.to_payload.items():
             if payload == text or (isinstance(value, str) and payload.lower() == value):
                 return value
         raise ValueError(payload)
+
+    def state_payload(self) -> str | None:
+        if self.get is None:
+            return None
+        value = self.get()
+        if value is None:
+            return None
+        return self.to_payload.get(value, str(value))
 
 
 def _sw_version() -> str:
@@ -77,6 +107,26 @@ def make_entities(get_music_screen: Callable[[], str], set_music_screen: Callabl
     ]
 
 
+def make_update_entities(updates: Any) -> list[Entity]:
+    """Entities for an updates.UpdateManager."""
+    count = {"unit_of_measurement": "packages", "state_class": "measurement"}
+    return [
+        Entity("system_updates", "sensor", "System package updates", "mdi:package-up",
+               get=updates.system_count, attributes=updates.system_attributes, extra=count),
+        Entity("app_updates", "sensor", "sendspin-frame updates", "mdi:update",
+               get=updates.app_count, attributes=updates.app_attributes, extra=count),
+        Entity("update_status", "sensor", "Update status", "mdi:progress-download",
+               get=updates.status_text, attributes=updates.status_attributes,
+               extra={"entity_category": "diagnostic"}),
+        Entity("check_updates", "button", "Check for updates", "mdi:refresh",
+               press=updates.request_check),
+        Entity("update_system", "button", "Update system packages", "mdi:package-down",
+               press=lambda: updates.request_update("system")),
+        Entity("update_app", "button", "Update sendspin-frame", "mdi:download",
+               press=lambda: updates.request_update("app")),
+    ]
+
+
 class MqttBridge:
     def __init__(self, cfg: MqttConfig, player_name: str, entities: list[Entity]) -> None:
         self.cfg = cfg
@@ -85,6 +135,8 @@ class MqttBridge:
         self.base = f"sendspin_frame/{self.id}"
         self.entities = entities
         self._restored = False
+        self._client: aiomqtt.Client | None = None
+        self._tasks: set[asyncio.Task] = set()
 
     @property
     def status_topic(self) -> str:
@@ -97,6 +149,9 @@ class MqttBridge:
     def state_topic(self, e: Entity) -> str:
         return f"{self.base}/{e.key}"
 
+    def attributes_topic(self, e: Entity) -> str:
+        return f"{self.base}/{e.key}/attributes"
+
     def command_topic(self, e: Entity) -> str:
         return f"{self.base}/{e.key}/set"
 
@@ -108,8 +163,6 @@ class MqttBridge:
             "name": e.name,
             "unique_id": f"sendspin_frame_{self.id}_{e.key}",
             "icon": e.icon,
-            "state_topic": self.state_topic(e),
-            "command_topic": self.command_topic(e),
             "availability_topic": self.status_topic,
             "device": {
                 "identifiers": [f"sendspin_frame_{self.id}"],
@@ -119,11 +172,32 @@ class MqttBridge:
                 "sw_version": _sw_version(),
             },
         }
+        if e.get is not None:
+            payload["state_topic"] = self.state_topic(e)
+        if e.has_command:
+            payload["command_topic"] = self.command_topic(e)
+        if e.attributes is not None:
+            payload["json_attributes_topic"] = self.attributes_topic(e)
         if e.component == "select":
             payload["options"] = list(e.to_payload.values())
-        else:
+        elif e.component == "switch":
             payload["payload_on"], payload["payload_off"] = e.to_payload[True], e.to_payload[False]
+        elif e.component == "button":
+            payload["payload_press"] = PRESS
+        payload.update(e.extra)
         return json.dumps(payload)
+
+    def notify(self, *keys: str) -> None:
+        """Publish the current state of these entities (all with a state when no keys given).
+
+        Call from the asyncio loop when a value changed outside of an MQTT command.
+        """
+        if self._client is None:
+            return
+        wanted = [e for e in self.entities if e.get is not None and (not keys or e.key in keys)]
+        task = asyncio.ensure_future(self._publish_states(self._client, wanted))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
 
     async def run(self) -> None:
         backoff = 5.0
@@ -150,9 +224,11 @@ class MqttBridge:
             if not self._restored:
                 await self._restore(client)
             for e in self.entities:
-                await client.subscribe(self.command_topic(e), qos=1)
+                if e.has_command:
+                    await client.subscribe(self.command_topic(e), qos=1)
             await client.subscribe(self.ha_status_topic)
             await self._announce(client)
+            self._client = client
             try:
                 async for msg in client.messages:
                     payload = bytes(msg.payload or b"").decode(errors="replace").strip()
@@ -161,7 +237,7 @@ class MqttBridge:
                             await self._announce(client)  # Home Assistant restarted
                         continue
                     for e in self.entities:
-                        if msg.topic.matches(self.command_topic(e)):
+                        if e.has_command and msg.topic.matches(self.command_topic(e)):
                             await self._handle_command(client, e, payload)
             except asyncio.CancelledError:
                 # Stopping cleanly: the broker only sends the last will on a lost connection.
@@ -169,10 +245,12 @@ class MqttBridge:
                     async with asyncio.timeout(2):
                         await client.publish(self.status_topic, "offline", qos=1, retain=True)
                 raise
+            finally:
+                self._client = None
 
     async def _restore(self, client: aiomqtt.Client) -> None:
         """Take over the last choices made in Home Assistant (our retained state messages)."""
-        pending = {self.state_topic(e): e for e in self.entities}
+        pending = {self.state_topic(e): e for e in self.entities if e.restorable}
         for topic in pending:
             await client.subscribe(topic, qos=1)
         try:
@@ -192,7 +270,8 @@ class MqttBridge:
         except TimeoutError:
             pass
         for e in self.entities:
-            await client.unsubscribe(self.state_topic(e))
+            if e.restorable:
+                await client.unsubscribe(self.state_topic(e))
         self._restored = True
 
     async def _announce(self, client: aiomqtt.Client) -> None:
@@ -200,10 +279,22 @@ class MqttBridge:
             await client.publish(self.discovery_topic(e), self.discovery_payload(e),
                                  qos=1, retain=True)
         await client.publish(self.status_topic, "online", qos=1, retain=True)
-        for e in self.entities:
-            await client.publish(self.state_topic(e), e.to_payload[e.get()], qos=1, retain=True)
+        await self._publish_states(client, self.entities)
+
+    async def _publish_states(self, client: aiomqtt.Client, entities: list[Entity]) -> None:
+        for e in entities:
+            payload = e.state_payload()
+            if payload is None:
+                continue  # unknown yet: Home Assistant keeps the retained value, if any
+            if e.attributes is not None:
+                await client.publish(self.attributes_topic(e), json.dumps(e.attributes()),
+                                     qos=1, retain=True)
+            await client.publish(self.state_topic(e), payload, qos=1, retain=True)
 
     async def _handle_command(self, client: aiomqtt.Client, e: Entity, payload: str) -> None:
+        if e.press is not None:
+            e.press()
+            return
         try:
             value = e.parse(payload)
         except ValueError:

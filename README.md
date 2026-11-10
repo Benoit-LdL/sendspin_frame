@@ -37,6 +37,9 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
 - **Home Assistant control over MQTT.** Choose between the cover and the photo slideshow while
   music plays, and show or hide the system stats, from Home Assistant. The device sets itself up
   through MQTT discovery.
+- **Updates from Home Assistant.** The Pi checks every few hours how many Raspberry Pi OS
+  packages and Python packages can be updated, and whether there is a newer sendspin-frame. The
+  counts show up as sensors, and buttons install the updates.
 - **Optional system stats.** CPU use, RAM use and CPU temperature in the top-left corner.
 - **OLED burn-in protection.** Optionally moves the picture by a few pixels every few minutes.
 - **Optional night mode.** The screen switches off in a time window you choose, and wakes up when
@@ -141,6 +144,34 @@ Both are kept across restarts and can be used in automations, for example the sl
 during the evening. `now_playing.screen` and `display.show_stats` in the config are the defaults
 until the first change in Home Assistant.
 
+#### Updates from Home Assistant
+The same device also gets (switch off with `updates.enabled = false`):
+- **System package updates**: how many Raspberry Pi OS packages `apt` can upgrade. The
+  attributes list them, and say whether a reboot is required.
+- **sendspin-frame updates**: how many things the *Update sendspin-frame* button would change:
+  the Python packages in the app's venv that have a newer allowed version, plus one when there
+  are new commits on the branch you installed from. The attributes list the packages, the
+  installed and latest commit, and the latest commit message.
+- **Update status** (diagnostic): *Idle*, *Checking*, *Updating ...* or *Failed*, with the time
+  of the last check and the error if there was one.
+- Buttons **Check for updates**, **Update system packages** (`apt-get full-upgrade` and
+  `autoremove`) and **Update sendspin-frame** (fetches the newest code into
+  `/usr/local/src/sendspin-frame`, runs its `install.sh`, which also upgrades the Python
+  packages, and restarts the service).
+
+Checks run shortly after start and then every `updates.check_hours` (default 6). Put the two
+counters on a dashboard, or use them in an automation that sends a notification. For
+automations, the state goes to `unknown` until the first check after a start.
+
+Updates run as root, so `install.sh` installs a small helper at
+`/usr/local/sbin/sendspin-frame-update` and a sudoers rule (`/etc/sudoers.d/sendspin-frame`)
+that lets the `sendspin` service user run exactly that command. Updates run as a transient
+systemd unit, so they finish even when sendspin-frame itself is restarted. Their output is in
+`journalctl -u sendspin-frame-update`. The *Update sendspin-frame* button does nothing more
+than `git pull` + `sudo ./install.sh` would, on a copy of the repository it keeps itself; your
+own checkout isn't touched. If you installed from a plain folder instead of a git clone, the
+button only upgrades the Python packages.
+
 ### OLED TVs and burn-in
 Set `display.pixel_shift = 6`. Every `pixel_shift_minutes` (default 3) the whole picture moves to
 a new spot, at most 6 pixels from the centre, like the "screen shift" of OLED TVs. The clock and
@@ -184,6 +215,7 @@ replaces it.
 | Photos don't appear | Open `<your frame url>/image` in a browser. It must show a photo. For self-signed certs, set `photos.verify_tls = false`. |
 | Slow screen changes, high CPU use | Set `transition_ms = 0` to turn off crossfades. On a big TV, also lower the screen resolution (see below). |
 | Screen is upside down / sideways | `display.rotate = 180` (or `90` / `270`). |
+| Update status says *Failed* | Check the `error` attribute. `sudo -u sendspin sudo -n /usr/local/sbin/sendspin-frame-update check` should print a JSON report; if it asks for a password, re-run `install.sh` to put the sudoers rule back. Output of the updates themselves: `journalctl -u sendspin-frame-update`. |
 
 ### Lower the screen resolution
 
@@ -227,10 +259,14 @@ sendspin_frame/
   display.py     framebuffer output (RGB565 dithering / XRGB8888), PNG output for testing
   photoframe.py  Nextcloud Photo Frames client
   ma_api.py      Music Assistant API client (media type + station / show name for the popup)
+  mqtt.py        Home Assistant over MQTT (discovery, select / switch / sensor / button)
+  updates.py     scheduled update checks and the update buttons (runs the root helper)
+  update_helper.py  the root helper: apt / uv / git checks, updates as a transient systemd unit
   config.py      TOML config
   state.py       thread-safe state shared between asyncio and the render thread
 tools/           preview renderer and fake server for testing
 systemd/         service unit
+bin/             sendspin-frame-update wrapper (installed to /usr/local/sbin)
 install.sh       Raspberry Pi installer
 ```
 

@@ -70,11 +70,23 @@ class FrameRuntime:
                 logger.warning("music_assistant.token is set but there is no address: "
                                "set music_assistant.url (or sendspin.server_url)")
         if self.cfg.mqtt.host:
-            from .mqtt import MqttBridge, make_entities
+            from .mqtt import MqttBridge, make_entities, make_update_entities
 
             entities = make_entities(lambda: self._music_screen, self.set_music_screen,
                                      lambda: self._show_stats, self.set_show_stats)
+            updates = None
+            if self.cfg.updates.enabled:
+                from .updates import UpdateManager
+
+                # The helper needs root: install.sh adds the sudoers rule for it. Low priority,
+                # so apt never competes with the audio.
+                updates = UpdateManager(self.cfg.updates,
+                                        ["nice", "-n", "10", "sudo", "-n", self.cfg.updates.helper])
+                entities += make_update_entities(updates)
             bridge = MqttBridge(self.cfg.mqtt, self.cfg.sendspin.name, entities)
+            if updates is not None:
+                updates.on_change = bridge.notify
+                self._tasks.append(asyncio.create_task(updates.run(), name="updates"))
             self._tasks.append(asyncio.create_task(bridge.run(), name="mqtt"))
 
     async def stop(self) -> None:

@@ -110,6 +110,18 @@ class MqttConfig:
 
 
 @dataclass
+class UpdatesConfig:
+    # Check for updates (Raspberry Pi OS packages, the Python packages in the venv and new
+    # versions of sendspin-frame) and show the counts plus "Update" buttons in Home Assistant.
+    # Needs [mqtt]. The buttons run through a root helper installed by install.sh.
+    enabled: bool = True
+    # Hours between checks (0 = only when the "Check for updates" button is pressed).
+    check_hours: float = 6
+    # The root helper (installed by install.sh, allowed through /etc/sudoers.d/sendspin-frame).
+    helper: str = "/usr/local/sbin/sendspin-frame-update"
+
+
+@dataclass
 class MusicAssistantConfig:
     # Music Assistant's own API, to know whether it's music, radio, a podcast or an audiobook,
     # and the station / podcast / book name (Sendspin doesn't send these). Needs a long-lived
@@ -140,6 +152,7 @@ class FrameConfig:
     photos: PhotosConfig = field(default_factory=PhotosConfig)
     idle: IdleConfig = field(default_factory=IdleConfig)
     mqtt: MqttConfig = field(default_factory=MqttConfig)
+    updates: UpdatesConfig = field(default_factory=UpdatesConfig)
     music_assistant: MusicAssistantConfig = field(default_factory=MusicAssistantConfig)
     style: StyleConfig = field(default_factory=StyleConfig)
 
@@ -194,4 +207,6 @@ def load_config(path: str | None) -> FrameConfig:
         raise ValueError('now_playing.screen must be "cover" or "photos"')
     if cfg.idle.mode not in ("photos", "clock", "blank"):
         raise ValueError('idle.mode must be "photos", "clock" or "blank"')
+    if cfg.updates.check_hours < 0:
+        raise ValueError("updates.check_hours must be 0 or more")
     return cfg
