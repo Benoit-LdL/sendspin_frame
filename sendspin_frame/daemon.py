@@ -44,6 +44,7 @@ class FrameRuntime:
         self._playback = "stopped"
         self._music_screen = cfg.now_playing.screen
         self._show_stats = cfg.display.show_stats
+        self._update_notice: str | None = None
         self._art_received_at = 0.0
         self._art_url: str | None = None
         self._art_url_task: asyncio.Task | None = None
@@ -69,25 +70,59 @@ class FrameRuntime:
             else:
                 logger.warning("music_assistant.token is set but there is no address: "
                                "set music_assistant.url (or sendspin.server_url)")
+        updates = None
+        notice_on_screen = self.cfg.updates.show_on_screen and self.screen.running
+        if self.cfg.updates.enabled and (self.cfg.mqtt.host or notice_on_screen):
+            from .updates import UpdateManager
+
+            # The helper needs root: install.sh adds the sudoers rule for it. Low priority,
+            # so apt never competes with the audio.
+            updates = UpdateManager(self.cfg.updates,
+                                    ["nice", "-n", "10", "sudo", "-n", self.cfg.updates.helper])
+            if notice_on_screen:
+                updates.on_change = lambda: self._set_update_notice(updates.screen_notice())
+            self._tasks.append(asyncio.create_task(updates.run(), name="updates"))
         if self.cfg.mqtt.host:
-            from .mqtt import MqttBridge, make_entities, make_update_entities
+            from .mqtt import (
+                MqttBridge,
+                make_entities,
+                make_stats_entities,
+                make_update_entities,
+            )
 
             entities = make_entities(lambda: self._music_screen, self.set_music_screen,
                                      lambda: self._show_stats, self.set_show_stats)
-            updates = None
-            if self.cfg.updates.enabled:
-                from .updates import UpdateManager
-
-                # The helper needs root: install.sh adds the sudoers rule for it. Low priority,
-                # so apt never competes with the audio.
-                updates = UpdateManager(self.cfg.updates,
-                                        ["nice", "-n", "10", "sudo", "-n", self.cfg.updates.helper])
+            stats: dict[str, object] = {}
+            stats_keys: list[str] = []
+            if self.cfg.mqtt.stats_interval > 0:
+                stats_entities = make_stats_entities(stats.get)
+                stats_keys = [e.key for e in stats_entities]
+                entities += stats_entities
+            if updates is not None:
                 entities += make_update_entities(updates)
             bridge = MqttBridge(self.cfg.mqtt, self.cfg.sendspin.name, entities)
             if updates is not None:
-                updates.on_change = bridge.notify
-                self._tasks.append(asyncio.create_task(updates.run(), name="updates"))
+                to_screen = updates.on_change
+
+                def on_change() -> None:
+                    bridge.notify()
+                    to_screen()
+
+                updates.on_change = on_change
+            if stats_keys:
+                self._tasks.append(asyncio.create_task(
+                    self._publish_stats(bridge, stats, stats_keys), name="mqtt-stats"))
             self._tasks.append(asyncio.create_task(bridge.run(), name="mqtt"))
+
+    async def _publish_stats(self, bridge, stats: dict[str, object], keys: list[str]) -> None:
+        """Refresh the diagnostic sensors in Home Assistant (a few small /proc and /sys reads)."""
+        from .sysstats import StatsReader
+
+        reader = StatsReader()
+        while True:
+            stats.update(reader.details())
+            bridge.notify(*keys)
+            await asyncio.sleep(self.cfg.mqtt.stats_interval)
 
     async def stop(self) -> None:
         for task in self._tasks:
@@ -121,6 +156,12 @@ class FrameRuntime:
         """CPU / RAM / temperature overlay on the screen (can change at any time)."""
         self._show_stats = show
         self.screen.send("show_stats", show)
+
+    def _set_update_notice(self, text: str | None) -> None:
+        """The "update available" popup on the screen (None = no popup)."""
+        if text != self._update_notice:
+            self._update_notice = text
+            self.screen.send("update_notice", text)
 
     def _on_photo(self, data: bytes | None, taken_at: float | None, place: str | None) -> None:
         self.screen.send("photo", data, taken_at, place)

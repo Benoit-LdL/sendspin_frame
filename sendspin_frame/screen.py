@@ -129,6 +129,8 @@ def _screen_main(cfg: FrameConfig, inbox: mp.Queue, ready: Any) -> None:
             elif kind == "show_stats":
                 state.set_show_stats(msg[1])
                 logger.info("System stats on screen: %s", "on" if msg[1] else "off")
+            elif kind == "update_notice":
+                state.set_update_notice(msg[1])
             elif kind == "artwork":
                 state.set_artwork(decode_artwork(msg[1], side) if msg[1] else None)
             elif kind == "photo":

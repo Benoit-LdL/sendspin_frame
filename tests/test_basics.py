@@ -202,6 +202,58 @@ def test_sysstats_reads_proc(tmp_path):
     assert s.text() == "CPU 50%   RAM 25%   52°C"
 
 
+def test_sysstats_details_and_mqtt_sensors(tmp_path):
+    import json
+
+    from sendspin_frame.config import MqttConfig
+    from sendspin_frame.mqtt import MqttBridge, make_stats_entities
+    from sendspin_frame.sysstats import StatsReader
+
+    proc, sys = tmp_path / "proc", tmp_path / "sys"
+    (proc / "net").mkdir(parents=True)
+    (proc / "stat").write_text("cpu  100 0 100 800 0 0 0 0 0 0\n")
+    (proc / "meminfo").write_text("MemTotal:  4096 kB\nMemAvailable:  2048 kB\n")
+    (proc / "uptime").write_text("11584.61 40000.00\n")
+    (proc / "net" / "route").write_text(
+        "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\n"
+        "eth0\t00000000\t0101A8C0\t0003\t0\t0\t700\t00000000\n"
+        "wlan0\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\n"
+        "wlan0\t0001A8C0\t00000000\t0001\t0\t0\t600\t00FFFFFF\n")
+    (proc / "net" / "wireless").write_text(
+        "Inter-| sta-|   Quality        |   Discarded packets\n"
+        " face | tus | link level noise |  nwid  crypt\n"
+        " wlan0: 0000   64.  -46.  -256        0      0\n")
+    (sys / "class/thermal/thermal_zone0").mkdir(parents=True)
+    (sys / "class/thermal/thermal_zone0/temp").write_text("25899\n")
+    (sys / "class/net/wlan0").mkdir(parents=True)
+    (sys / "class/net/wlan0/address").write_text("d8:3a:dd:00:11:22\n")
+    (sys / "devices/system/cpu/cpu0/cpufreq").mkdir(parents=True)
+    (sys / "devices/system/cpu/cpu0/cpufreq/scaling_cur_freq").write_text("2400000\n")
+
+    reader = StatsReader(str(proc), str(sys))
+    (proc / "stat").write_text("cpu  150 0 150 900 0 0 0 0 0 0\n")
+    d = reader.details()
+    d.pop("ip_address")  # depends on the machine running the test
+    assert d == {"cpu_temperature": 25.9, "cpu_frequency": 2400.0, "cpu_use": 50.0,
+                 "ram_use": 50.0, "free_memory": 2.0, "uptime": 11584,
+                 "mac_address": "d8:3a:dd:00:11:22", "wifi_signal": -46.0}
+
+    empty = StatsReader(str(tmp_path / "none"), str(tmp_path / "none")).details()
+    assert set(empty) == set(d) | {"ip_address"} and not any(empty.values())
+
+    ents = make_stats_entities(d.get)
+    assert {e.key for e in ents} == set(empty)
+    by_key = {e.key: e for e in ents}
+    b = MqttBridge(MqttConfig(host="x"), "TV", ents)
+    p = json.loads(b.discovery_payload(by_key["wifi_signal"]))
+    assert p["state_topic"] == "sendspin_frame/tv/wifi_signal" and "command_topic" not in p
+    assert (p["unit_of_measurement"], p["device_class"]) == ("dBm", "signal_strength")
+    assert p["entity_category"] == "diagnostic"
+    assert "unit_of_measurement" not in json.loads(b.discovery_payload(by_key["mac_address"]))
+    assert by_key["wifi_signal"].state_payload() == "-46.0"
+    assert by_key["ip_address"].state_payload() is None  # unknown: nothing published
+
+
 def test_stats_overlay_toggles_on_and_off():
     from sendspin_frame.config import FrameConfig
     from sendspin_frame.display import Display
@@ -231,6 +283,49 @@ def test_stats_overlay_toggles_on_and_off():
     state.set_show_stats(False)
     engine._tick()
     assert engine._frame.crop(engine._stats_box()).tobytes() == before.tobytes()
+
+
+def test_update_notice_shows_and_hides():
+    from sendspin_frame.config import FrameConfig
+    from sendspin_frame.display import Display
+    from sendspin_frame.engine import Engine
+
+    class Capture(Display):
+        width, height = 640, 360
+
+        def __init__(self):
+            self.boxes = []
+
+        def show(self, img, box=None, fast=False):
+            self.boxes.append(box)
+
+    cfg = FrameConfig()
+    cfg.display.transition_ms = 0
+    disp = Capture()
+    state = SharedState()
+    engine = Engine(cfg, state, disp)
+    engine._tick()
+    box = engine._stats_box()
+    before = engine._frame.crop(box)
+    state.set_update_notice("sendspin-frame update available")
+    engine._tick()
+    alone = engine._frame.crop(box)
+    assert disp.boxes[-1] == box and alone.tobytes() != before.tobytes()
+    state.set_show_stats(True)  # the popup moves down, under the stats line
+    engine._tick()
+    assert engine._frame.crop(box).tobytes() != alone.tobytes()
+    state.set_show_stats(False)
+    engine._tick()
+    assert engine._frame.crop(box).tobytes() == alone.tobytes()
+    state.set_connection(True, "MA")  # a new scene keeps the popup
+    engine._tick()
+    time.sleep(0.3)  # the engine waits a moment before it builds a new scene
+    engine._tick()
+    assert engine._scene.key[1] is True
+    assert engine._frame.crop(box).tobytes() != engine._stats_bg.tobytes()
+    state.set_update_notice(None)
+    engine._tick()
+    assert engine._frame.crop(box).tobytes() == engine._stats_bg.tobytes()
 
 
 def test_photo_status_badge_follows_connection():

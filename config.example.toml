@@ -91,6 +91,9 @@ port = 1883
 username = ""
 password = ""
 discovery_prefix = "homeassistant"
+# Diagnostic sensors on the same device: CPU temperature, CPU frequency, CPU use, RAM use, free
+# memory, uptime, IP address, MAC address and WiFi signal. Seconds between updates; 0 = off.
+stats_interval = 60
 
 [updates]
 # Updates from Home Assistant (needs [mqtt]): the device gets "System package updates" and
@@ -100,6 +103,9 @@ discovery_prefix = "homeassistant"
 # upgrades the Python packages, and restarts). The buttons run through a small root helper
 # that install.sh installs with a sudoers rule (/etc/sudoers.d/sendspin-frame).
 enabled = true
+# Show a small "sendspin-frame update available" popup in the top-left corner of the screen
+# while there is a newer sendspin-frame (this one also works without [mqtt]).
+show_on_screen = true
 # Hours between automatic checks (0 = only on the "Check for updates" button).
 check_hours = 6
 # The root helper. Normally no need to change.

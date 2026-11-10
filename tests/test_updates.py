@@ -102,7 +102,9 @@ def test_manager_check_and_update(tmp_path):
 
     async def go():
         assert m.system_count() is None  # unknown before the first check
+        assert m.screen_notice() is None
         assert await m.check()
+        assert m.screen_notice() == "sendspin-frame update available"  # 2 commits behind
         assert m.system_count() == 1 and m.app_count() == 2
         assert m.system_attributes()["packages"] == ["libc6 1 -> 2"]
         attrs = m.app_attributes()

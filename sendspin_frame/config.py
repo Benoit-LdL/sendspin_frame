@@ -107,14 +107,20 @@ class MqttConfig:
     password: str = ""
     # Home Assistant's MQTT discovery prefix.
     discovery_prefix: str = "homeassistant"
+    # Seconds between updates of the diagnostic sensors (CPU temperature, CPU use, RAM, uptime,
+    # IP address, WiFi signal, ...). 0 = no diagnostic sensors.
+    stats_interval: float = 60
 
 
 @dataclass
 class UpdatesConfig:
     # Check for updates (Raspberry Pi OS packages, the Python packages in the venv and new
     # versions of sendspin-frame) and show the counts plus "Update" buttons in Home Assistant.
-    # Needs [mqtt]. The buttons run through a root helper installed by install.sh.
+    # The buttons run through a root helper installed by install.sh.
+    # Without [mqtt] only the popup on the screen is left (see show_on_screen).
     enabled: bool = True
+    # Show a small popup in the top-left corner while a newer sendspin-frame is available.
+    show_on_screen: bool = True
     # Hours between checks (0 = only when the "Check for updates" button is pressed).
     check_hours: float = 6
     # The root helper (installed by install.sh, allowed through /etc/sudoers.d/sendspin-frame).

@@ -1,5 +1,7 @@
 """Update checks and updates, driven from Home Assistant (see mqtt.py for the entities).
 
+A newer sendspin-frame also shows as a small popup on the screen (`updates.show_on_screen`).
+
 All the privileged work happens in the root helper (update_helper.py, run through sudo). This
 side runs the checks on a schedule, keeps the last report, starts updates when a button is
 pressed in Home Assistant, and tells the MQTT bridge when anything changed.
@@ -126,6 +128,14 @@ class UpdateManager:
             "last_check": self.last_check_iso(),
             "check_errors": list(self.report.errors) if self.report else [],
         }
+
+    def screen_notice(self) -> str | None:
+        """Text for the popup on the screen: only about sendspin-frame itself."""
+        if self.status == "updating_app":
+            return "Updating sendspin-frame…"
+        if self.report is not None and self.report.app_behind > 0:
+            return "sendspin-frame update available"
+        return None
 
     def last_check_iso(self) -> str | None:
         if self.last_check is None:

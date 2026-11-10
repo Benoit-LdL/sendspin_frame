@@ -39,7 +39,10 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
   through MQTT discovery.
 - **Updates from Home Assistant.** The Pi checks every few hours how many Raspberry Pi OS
   packages and Python packages can be updated, and whether there is a newer sendspin-frame. The
-  counts show up as sensors, and buttons install the updates.
+  counts show up as sensors, and buttons install the updates. A small popup on the screen
+  tells you when there is a newer sendspin-frame.
+- **Diagnostic sensors in Home Assistant.** CPU temperature, frequency and use, memory, uptime,
+  IP and MAC address, WiFi signal: the same figures an ESPHome speaker reports.
 - **Optional system stats.** CPU use, RAM use and CPU temperature in the top-left corner.
 - **OLED burn-in protection.** Optionally moves the picture by a few pixels every few minutes.
 - **Optional night mode.** The screen switches off in a time window you choose, and wakes up when
@@ -144,6 +147,11 @@ Both are kept across restarts and can be used in automations, for example the sl
 during the evening. `now_playing.screen` and `display.show_stats` in the config are the defaults
 until the first change in Home Assistant.
 
+The device also has diagnostic sensors, like an ESPHome speaker: **CPU temperature**, **CPU
+frequency**, **CPU use**, **RAM use**, **Free memory**, **Uptime**, **IP address**, **MAC
+address** and **WiFi signal** (stays unknown on a wired connection). They update every
+`mqtt.stats_interval` seconds (default 60; 0 switches them off).
+
 #### Updates from Home Assistant
 The same device also gets (switch off with `updates.enabled = false`):
 - **System package updates**: how many Raspberry Pi OS packages `apt` can upgrade. The
@@ -158,6 +166,12 @@ The same device also gets (switch off with `updates.enabled = false`):
   `autoremove`) and **Update sendspin-frame** (fetches the newest code into
   `/usr/local/src/sendspin-frame`, runs its `install.sh`, which also upgrades the Python
   packages, and restarts the service).
+
+While a newer sendspin-frame is available, the screen shows a small **sendspin-frame update
+available** popup in the top-left corner (under the system stats, when those are on), until
+the update is installed. It only looks at sendspin-frame itself, not at the system or Python
+packages. This popup also works without `[mqtt]`; `updates.show_on_screen = false` switches it
+off.
 
 Checks run shortly after start and then every `updates.check_hours` (default 6). Put the two
 counters on a dashboard, or use them in an automation that sends a notification. For

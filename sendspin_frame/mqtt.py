@@ -3,6 +3,8 @@
 Creates a device with:
   - a "Screen during music" select (Cover art / Photo slideshow)
   - a "System stats on screen" switch (CPU / RAM / temperature overlay)
+  - diagnostic sensors, refreshed every `mqtt.stats_interval` seconds: CPU temperature, CPU
+    frequency, CPU use, RAM use, free memory, uptime, IP address, MAC address, WiFi signal
   - with [updates]: "System package updates" and "sendspin-frame updates" counters, an
     "Update status" sensor, and "Check for updates" / "Update system packages" /
     "Update sendspin-frame" buttons (see updates.py)
@@ -104,6 +106,31 @@ def make_entities(get_music_screen: Callable[[], str], set_music_screen: Callabl
                get_music_screen, set_music_screen),
         Entity("show_stats", "switch", "System stats on screen", "mdi:chip",
                {True: "ON", False: "OFF"}, get_show_stats, set_show_stats),
+    ]
+
+
+def make_stats_entities(get: Callable[[str], Any]) -> list[Entity]:
+    """Diagnostic sensors; `get(key)` gives the latest value (see StatsReader.details)."""
+
+    def sensor(key: str, name: str, icon: str, unit: str | None = None,
+               device_class: str | None = None, state_class: str = "measurement") -> Entity:
+        extra: dict[str, Any] = {"entity_category": "diagnostic"}
+        if unit:
+            extra.update(unit_of_measurement=unit, state_class=state_class)
+        if device_class:
+            extra["device_class"] = device_class
+        return Entity(key, "sensor", name, icon, get=lambda: get(key), extra=extra)
+
+    return [
+        sensor("cpu_temperature", "CPU temperature", "mdi:thermometer", "°C", "temperature"),
+        sensor("cpu_frequency", "CPU frequency", "mdi:speedometer", "MHz", "frequency"),
+        sensor("cpu_use", "CPU use", "mdi:cpu-64-bit", "%"),
+        sensor("ram_use", "RAM use", "mdi:memory", "%"),
+        sensor("free_memory", "Free memory", "mdi:memory", "MB", "data_size"),
+        sensor("uptime", "Uptime", "mdi:clock-outline", "s", "duration", "total_increasing"),
+        sensor("ip_address", "IP address", "mdi:ip-network"),
+        sensor("mac_address", "MAC address", "mdi:network-outline"),
+        sensor("wifi_signal", "WiFi signal", "mdi:wifi", "dBm", "signal_strength"),
     ]
 
 

@@ -84,6 +84,15 @@ docs/screenshots/            README screenshots
 - Also: `sendspin.delay_ms`, `sendspin.server_url` (MA missed a restarted player over mDNS),
   Music Assistant logo badge (green/red) on the photo screen, CPU/RAM/temp overlay
   (`sysstats.py`, drawn by the engine in the top-left corner on every screen).
+- Diagnostic sensors over MQTT (2026-11-10), like the user's ESPHome Sendspin speakers: CPU
+  temperature / frequency / use, RAM use, free memory, uptime, IP, MAC, WiFi signal
+  (`StatsReader.details()`, `make_stats_entities`, `FrameRuntime._publish_stats`, every
+  `mqtt.stats_interval` s). **Not yet tried on the Pi.**
+- Update popup on the screen (2026-11-10): `UpdateManager.screen_notice()` -> screen message
+  `update_notice` -> `Snapshot.update_notice`, drawn by the engine as a pill in the top-left
+  overlay (same box as the stats, under them). Only for sendspin-frame itself (`app_behind`).
+  The UpdateManager now also runs without `[mqtt]` when `updates.show_on_screen` is on.
+  **Not yet tried on the Pi.**
 - Updates from Home Assistant (2026-11-10): `updates.py` checks on a schedule through a root
   helper (`update_helper.py`, run as `sudo -n /usr/local/sbin/sendspin-frame-update`, allowed by
   `/etc/sudoers.d/sendspin-frame`, both installed by install.sh). Sensors "System package
