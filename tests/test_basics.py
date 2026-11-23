@@ -312,27 +312,31 @@ def test_update_notice_shows_and_hides():
     state = SharedState()
     engine = Engine(cfg, state, disp)
     engine._tick()
-    box = engine._stats_box()
+    box = engine.renderer.notice_box(below=False)  # next to the badge (clock screen)
     before = engine._frame.crop(box)
     state.set_update_notice("sendspin-frame update available")
     engine._tick()
-    alone = engine._frame.crop(box)
-    assert disp.boxes[-1] == box and alone.tobytes() != before.tobytes()
-    state.set_show_stats(True)  # the popup moves down, under the stats line
+    shown = engine._frame.crop(box)
+    assert disp.boxes[-1] == box and shown.tobytes() != before.tobytes()
+    state.set_show_stats(True)  # the stats line doesn't move the popup
     engine._tick()
-    assert engine._frame.crop(box).tobytes() != alone.tobytes()
+    assert engine._frame.crop(box).tobytes() == shown.tobytes()
     state.set_show_stats(False)
     engine._tick()
-    assert engine._frame.crop(box).tobytes() == alone.tobytes()
     state.set_connection(True, "MA")  # a new scene keeps the popup
     engine._tick()
     time.sleep(0.3)  # the engine waits a moment before it builds a new scene
     engine._tick()
     assert engine._scene.key[1] is True
-    assert engine._frame.crop(box).tobytes() != engine._stats_bg.tobytes()
+    assert engine._frame.crop(box).tobytes() != engine._notice_bg.tobytes()
     state.set_update_notice(None)
     engine._tick()
-    assert engine._frame.crop(box).tobytes() == engine._stats_bg.tobytes()
+    assert engine._frame.crop(box).tobytes() == engine._notice_bg.tobytes()
+    # On the photo screen the "now playing" popup is next to the badge: go under it.
+    r = engine.renderer
+    assert r.notice_box(below=True)[1] > r.badge_box()[3]
+    nb, pb = r.notice_box(below=False), r.popup_box()
+    assert nb[2] <= r.badge_box()[0] and nb[0] >= pb[0]
 
 
 def test_photo_status_badge_follows_connection():

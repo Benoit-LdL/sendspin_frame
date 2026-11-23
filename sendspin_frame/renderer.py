@@ -552,6 +552,31 @@ class Renderer:
         x0 = max(W // 2, x1 - int(min(W, H) * 0.4))
         return (x0, by, x1, by1)
 
+    def notice_box(self, below: bool) -> Box:
+        """The area of the update popup: left of the badge, or (`below`, on the photo screen,
+        where the 'now playing' popup is left of the badge) in the row under it."""
+        x0, y0, _, y1 = self.popup_box()
+        x1 = self.badge_box()[2]
+        if below:
+            gap = max(4, (y1 - y0) // 4)
+            y0, y1 = y1 + gap, y1 + gap + (y1 - y0)
+        else:
+            x1 = self.popup_box()[2]
+        return (x0, y0, x1, y1)
+
+    def notice_popup(self, region: Image.Image, text: str) -> None:
+        """Draw the update popup into `region` (the screen under `notice_box()`): a dark pill
+        like the 'now playing' popup, right-aligned so it sits next to / under the badge."""
+        h = region.height
+        font = self.fonts.get("medium", h * 0.4)
+        pad = int(h * 0.45)
+        text = ellipsize(text, font, region.width - 2 * pad)
+        w = min(region.width, math.ceil(font.getlength(text)) + 2 * pad)
+        x = region.width - w
+        shape = rounded_mask((w, h), h // 2).point(lambda v: v * 150 // 255)
+        region.paste((0, 0, 0), (x, 0), shape)
+        draw_text(region, (x + pad, h / 2), text, font, alpha=0.92, anchor="lm")
+
     def now_playing_popup(self, bg: Image.Image, text: str, paused: bool, kind: str | None,
                           start: float, fps: float) -> NowPlayingPopup:
         """`bg`: the screen under `popup_box()`. `kind`: icon to show (see `media_icon`), or

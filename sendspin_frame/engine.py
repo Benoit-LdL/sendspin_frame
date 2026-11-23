@@ -13,7 +13,7 @@ from PIL import Image
 
 from .config import FrameConfig
 from .display import Display
-from .renderer import Box, NowPlayingPopup, Renderer, Scene, draw_text, rounded_mask
+from .renderer import Box, NowPlayingPopup, Renderer, Scene, draw_text
 from .state import MediaInfo, SharedState, Snapshot, Track
 from .sysstats import StatsReader
 
@@ -112,8 +112,11 @@ class Engine(threading.Thread):
         self._np_art_serial = -1
         self._pending_key = None
         self._pending_since = 0.0
-        # Top-left corner overlay: the system stats, and under them the update popup.
+        # Update popup, next to the status badge (top-right).
         self._notice: str | None = None
+        self._notice_bg: Image.Image | None = None  # the area without the popup
+        self._notice_at: Box | None = None  # where it is on the current scene
+        # Top-left corner overlay: the system stats.
         self._stats = StatsReader()
         self._stats_text = ""
         self._stats_on = False
@@ -243,44 +246,46 @@ class Engine(threading.Thread):
     # ------------------------------------------------------------------ stats overlay
 
     def _stats_box(self) -> Box:
-        """Room for the stats line and, under it, the update popup."""
+        """Room for the stats line."""
         W, H = self.display.width, self.display.height
         k = min(W, H)
-        return (0, 0, int(W * 0.5), int(k * 0.03) + int(k * 0.026 * 1.6) + int(k * 0.026 * 2.1))
+        return (0, 0, int(W * 0.5), int(k * 0.03) + int(k * 0.026 * 1.6))
 
     def _draw_stats(self, region: Image.Image) -> None:
-        """The stats line (when on) and the update popup (when there is one)."""
         k = min(self.display.width, self.display.height)
-        size = k * 0.026
-        font = self.renderer.fonts.get("medium", size)
-        m = y = int(k * 0.03)
-        if self._stats_on:
-            draw_text(region, (m, y), self._stats_text, font, alpha=0.85, anchor="lt", shadow=0.7)
-            y += int(size * 1.6)
-        if self._notice:
-            # A dark pill, like the "now playing" popup.
-            h = int(size * 1.9)
-            pad = int(h * 0.45)
-            w = min(region.width - m, math.ceil(font.getlength(self._notice)) + 2 * pad)
-            shape = rounded_mask((w, h), h // 2).point(lambda v: v * 150 // 255)
-            region.paste((0, 0, 0), (m, y), shape)
-            draw_text(region, (m + pad, y + h / 2), self._notice, font, alpha=0.92, anchor="lm")
+        font = self.renderer.fonts.get("medium", k * 0.026)
+        m = int(k * 0.03)
+        draw_text(region, (m, m), self._stats_text, font, alpha=0.85, anchor="lt", shadow=0.7)
 
     def _update_stats(self, snap: Snapshot, now: float) -> None:
-        """Switch the stats and the update popup on / off; refresh the numbers every few seconds."""
-        want, notice = snap.show_stats, snap.update_notice
-        if (want, notice) == (self._stats_on, self._notice) and (
-                not want or now < self._stats_next):
+        """Switch the stats on / off; refresh the numbers every few seconds."""
+        want = snap.show_stats
+        if want == self._stats_on and (not want or now < self._stats_next):
             return
-        self._stats_on, self._notice = want, notice
+        self._stats_on = want
         if self._frame is None or self._stats_bg is None:
             return
         region = self._stats_bg.copy()
         if want:
             self._stats_text = self._stats.read().text()
             self._stats_next = now + STATS_INTERVAL_S
-        self._draw_stats(region)
+            self._draw_stats(region)
         self._paste(region, self._stats_box())
+
+    # ------------------------------------------------------------------ update popup
+
+    def _update_notice(self, snap: Snapshot) -> None:
+        """Show / hide / change the update popup."""
+        notice = snap.update_notice
+        if notice == self._notice:
+            return
+        self._notice = notice
+        if self._notice_bg is None or self._notice_at is None:
+            return
+        region = self._notice_bg.copy()
+        if notice and self._scene is not None and self._scene.key[0] != "blank":
+            self.renderer.notice_popup(region, notice)
+        self._paste(region, self._notice_at)
 
     # ------------------------------------------------------------------ now playing popup
 
@@ -347,12 +352,19 @@ class Engine(threading.Thread):
         frame = scene.frame(now)
         box = self._stats_box()
         self._stats_bg = frame.crop(box)
-        if (self._stats_on or self._notice) and scene.key[0] != "blank":
-            if self._stats_on and not self._stats_text:
+        if self._stats_on and scene.key[0] != "blank":
+            if not self._stats_text:
                 self._stats_text = self._stats.read().text()
             region = self._stats_bg.copy()
             self._draw_stats(region)
             frame.paste(region, box[:2])
+        # On the photo screen the "now playing" popup is left of the badge: go under it.
+        nbox = self.renderer.notice_box(below=scene.key[0] == "photo")
+        self._notice_at, self._notice_bg = nbox, frame.crop(nbox)
+        if self._notice and scene.key[0] != "blank":
+            region = self._notice_bg.copy()
+            self.renderer.notice_popup(region, self._notice)
+            frame.paste(region, nbox[:2])
         self._scene = scene
         pbox = self.renderer.popup_box()
         self._popup_bg = frame.crop(pbox)
@@ -427,6 +439,7 @@ class Engine(threading.Thread):
                     self._paste(*result)
                 self._dyn_key = dkey
         self._update_stats(snap, now)
+        self._update_notice(snap)
         self._update_popup(now)
         wake = 1.0
         if self._stats_on:
