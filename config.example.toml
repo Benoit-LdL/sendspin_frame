@@ -93,7 +93,7 @@ password = ""
 discovery_prefix = "homeassistant"
 # Diagnostic sensors on the same device: CPU temperature, CPU frequency, CPU use, RAM use, free
 # memory, uptime, IP address, MAC address and WiFi signal. Seconds between updates; 0 = off.
-stats_interval = 60
+stats_interval = 10
 
 [updates]
 # Updates from Home Assistant (needs [mqtt]): the device gets "System package updates" and

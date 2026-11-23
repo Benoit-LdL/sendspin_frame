@@ -109,7 +109,7 @@ class MqttConfig:
     discovery_prefix: str = "homeassistant"
     # Seconds between updates of the diagnostic sensors (CPU temperature, CPU use, RAM, uptime,
     # IP address, WiFi signal, ...). 0 = no diagnostic sensors.
-    stats_interval: float = 60
+    stats_interval: float = 10
 
 
 @dataclass
