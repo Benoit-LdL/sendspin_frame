@@ -80,7 +80,8 @@ class PhotosConfig:
     show_date: bool = True
     # Show when / where the photo was taken (from the Photo Frames headers).
     show_info: bool = True
-    # Small Music Assistant logo in the top-right corner: green = connected, red = not.
+    # Small Music Assistant logo in the top-right corner of the photo and cover screens:
+    # green = connected, red = not.
     show_status: bool = True
     # While music plays over the photos: icon (music / radio / podcast / audiobook), title,
     # artist and album / station / show in a small popup next to that logo (long text scrolls).

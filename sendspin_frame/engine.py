@@ -162,7 +162,7 @@ class Engine(threading.Thread):
         size = (self.display.width, self.display.height)
         if mode == "np":
             assert snap.track is not None
-            return ("np", snap.track.content_key(), snap.artwork_serial, size)
+            return ("np", snap.track.content_key(), snap.artwork_serial, snap.connected, size)
         if mode == "photo":
             assert snap.photo is not None
             return ("photo", snap.photo.serial, snap.connected, size)
@@ -177,7 +177,7 @@ class Engine(threading.Thread):
         if mode == "np":
             track = snap.track or Track()
             return r.now_playing(track, snap.artwork, snap.artwork_serial, lambda: self._paused,
-                                 lambda: self.state.snapshot().track)
+                                 lambda: self.state.snapshot().track, snap.connected)
         if mode == "photo":
             assert snap.photo is not None
             return r.photo(snap.photo, snap.connected)

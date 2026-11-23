@@ -344,8 +344,10 @@ class Renderer:
 
     def now_playing(self, track: Track, art: Image.Image | None, art_serial: int,
                     paused_fn: Callable[[], bool],
-                    live_track: Callable[[], Track | None] | None = None) -> Scene:
-        """`live_track` returns the latest metadata of the same song (seek / pause updates)."""
+                    live_track: Callable[[], Track | None] | None = None,
+                    connected: bool | None = None) -> Scene:
+        """`live_track` returns the latest metadata of the same song (seek / pause updates).
+        `connected`: draw the Music Assistant status badge (None = don't)."""
         W, H = self.size
         np_cfg = self.cfg.now_playing
         m = int(min(W, H) * 0.085)
@@ -470,7 +472,12 @@ class Renderer:
                                         radius=max(1, bw // 3), fill=(255, 255, 255, 200))
                 draw_text(region, (start + ih + ih * 0.5, ty), label, f_time, alpha=0.8)
 
-        key = ("np", track.content_key(), art_serial, self.size)
+        show_status = self.cfg.photos.show_status and connected is not None
+        if show_status:
+            self._paste_badge(base, bool(connected))
+
+        key = ("np", track.content_key(), art_serial, connected if show_status else None,
+               self.size)
         return Scene(key, base, dyn_box, draw_dynamic, dynamic_key)
 
     # ---------------------------------------------------------------------- photo
@@ -511,9 +518,7 @@ class Renderer:
                 draw_text(base, (W - m, y), place, f_place, alpha=0.95, anchor="rd", shadow=0.6)
 
         if pc.show_status and connected is not None:
-            bx, by, bx1, _ = self.badge_box()
-            badge = status_badge(bx1 - bx, connected)
-            base.paste(badge, (bx, by), badge)
+            self._paste_badge(base, connected)
 
         if not (pc.show_clock or pc.show_date):
             return Scene(key, base)
@@ -524,8 +529,13 @@ class Renderer:
         return Scene(key, base, box,
                      self._clock_drawer(box, f_clock, f_date, m, "left"), _minute_key)
 
+    def _paste_badge(self, base: Image.Image, connected: bool) -> None:
+        bx, by, bx1, _ = self.badge_box()
+        badge = status_badge(bx1 - bx, connected)
+        base.paste(badge, (bx, by), badge)
+
     def badge_box(self) -> Box:
-        """Where the Music Assistant badge sits on the photo screen (top-right corner)."""
+        """Where the Music Assistant badge sits on the photo and cover screens (top-right)."""
         W, H = self.size
         k = min(W, H)
         m = int(k * 0.06)

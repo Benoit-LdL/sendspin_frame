@@ -349,6 +349,21 @@ def test_photo_status_badge_follows_connection():
     assert any(c[:3] == STATUS_ERROR for c in colors)
 
 
+def test_cover_screen_shows_status_badge():
+    from sendspin_frame.config import FrameConfig
+    from sendspin_frame.renderer import Renderer
+
+    r = Renderer(FrameConfig(), (640, 360))
+    t = Track(title="Song", artist="Artist")
+    on, off = (r.now_playing(t, None, 0, lambda: False, None, c) for c in (True, False))
+    assert on.key != off.key  # the screen is redrawn when the connection changes
+    bx, by, bx1, by1 = r.badge_box()
+    centre = ((bx + bx1) // 2, (by + by1) // 2)
+    assert on.base.crop(r.badge_box()).tobytes() != off.base.crop(r.badge_box()).tobytes()
+    none = r.now_playing(t, None, 0, lambda: False)
+    assert none.base.getpixel(centre) != on.base.getpixel(centre)
+
+
 def test_pairing_code_takes_over_the_screen():
     from sendspin_frame.config import FrameConfig
     from sendspin_frame.display import PngDisplay
