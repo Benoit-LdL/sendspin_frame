@@ -142,10 +142,12 @@ After a restart, a device named after the player shows up under **Settings → D
 services → MQTT**, with:
 - **Screen during music**: *Cover art* or *Photo slideshow*.
 - **System stats on screen**: CPU use, RAM use and CPU temperature in the top-left corner.
+- **Photo Frames URL** (under *Configuration*): the slideshow's public Photo Frames link. A new
+  URL takes effect straight away, no restart needed; clear it to turn the slideshow off.
 
-Both are kept across restarts and can be used in automations, for example the slideshow only
-during the evening. `now_playing.screen` and `display.show_stats` in the config are the defaults
-until the first change in Home Assistant.
+These three are kept across restarts and can be used in automations, for example the slideshow only
+during the evening. `now_playing.screen`, `display.show_stats` and `photos.url` in the config are
+the defaults until the first change in Home Assistant; after that, Home Assistant's value wins.
 
 The device also has diagnostic sensors, like an ESPHome speaker: **CPU temperature**, **CPU
 frequency**, **CPU use**, **RAM use**, **Free memory**, **Uptime**, **IP address**, **MAC

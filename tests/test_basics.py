@@ -171,9 +171,10 @@ def test_mqtt_discovery_payload():
     assert node_id("Living Room TV!") == "living_room_tv"
     got = {}
     ents = make_entities(lambda: "cover", lambda v: got.update(screen=v),
-                         lambda: False, lambda v: got.update(stats=v))
+                         lambda: False, lambda v: got.update(stats=v),
+                         lambda: "", lambda v: got.update(url=v))
     b = MqttBridge(MqttConfig(host="x"), "TV", ents)
-    sel, sw = ents
+    sel, sw, txt = ents
     p = json.loads(b.discovery_payload(sel))
     assert p["command_topic"] == "sendspin_frame/tv/music_screen/set"
     assert p["options"] == ["Cover art", "Photo slideshow"]
@@ -182,6 +183,12 @@ def test_mqtt_discovery_payload():
     assert (p["payload_on"], p["payload_off"]) == ("ON", "OFF")
     assert b.discovery_topic(sw) == "homeassistant/switch/tv/show_stats/config"
     assert sel.parse("Photo slideshow") == "photos" and sw.parse("ON") is True
+    p = json.loads(b.discovery_payload(txt))
+    assert b.discovery_topic(txt) == "homeassistant/text/tv/photos_url/config"
+    assert p["command_topic"] == "sendspin_frame/tv/photos_url/set"
+    assert p["entity_category"] == "config" and p["max"] == 255
+    url = "https://cloud.example.com/apps/photo_frames/abc"
+    assert txt.parse(f" {url}\n") == url and txt.restorable
 
 
 def test_sysstats_reads_proc(tmp_path):

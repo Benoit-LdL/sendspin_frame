@@ -8,6 +8,7 @@ what arrives to the screen process (see screen.py), so drawing never competes wi
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 
@@ -45,6 +46,8 @@ class FrameRuntime:
         self._music_screen = cfg.now_playing.screen
         self._show_stats = cfg.display.show_stats
         self._update_notice: str | None = None
+        self._photos_url = cfg.photos.url
+        self._photo_task: asyncio.Task | None = None
         self._art_received_at = 0.0
         self._art_url: str | None = None
         self._art_url_task: asyncio.Task | None = None
@@ -54,10 +57,7 @@ class FrameRuntime:
 
     async def start(self) -> None:
         await asyncio.to_thread(self.screen.start)
-        # Also when idle.mode isn't "photos": the slideshow can be switched on during music.
-        if self.screen.running and self.cfg.photos.url:
-            fetcher = PhotoFrameFetcher(self.cfg.photos, self._on_photo)
-            self._tasks.append(asyncio.create_task(fetcher.run(), name="photoframe"))
+        self._start_photos()
         ma = self.cfg.music_assistant
         if self.screen.running and ma.token:
             from .ma_api import MusicAssistantApi, api_url
@@ -91,7 +91,8 @@ class FrameRuntime:
             )
 
             entities = make_entities(lambda: self._music_screen, self.set_music_screen,
-                                     lambda: self._show_stats, self.set_show_stats)
+                                     lambda: self._show_stats, self.set_show_stats,
+                                     lambda: self._photos_url, self.set_photos_url)
             stats: dict[str, object] = {}
             stats_keys: list[str] = []
             if self.cfg.mqtt.stats_interval > 0:
@@ -125,6 +126,8 @@ class FrameRuntime:
             await asyncio.sleep(self.cfg.mqtt.stats_interval)
 
     async def stop(self) -> None:
+        if self._photo_task:
+            self._photo_task.cancel()
         for task in self._tasks:
             task.cancel()
         await asyncio.to_thread(self.screen.stop)
@@ -156,6 +159,27 @@ class FrameRuntime:
         """CPU / RAM / temperature overlay on the screen (can change at any time)."""
         self._show_stats = show
         self.screen.send("show_stats", show)
+
+    def set_photos_url(self, url: str) -> None:
+        """Switch to another Photo Frames slideshow (empty = no slideshow)."""
+        url = url.strip()
+        if url == self._photos_url:
+            return
+        logger.info("Photo Frames: URL changed to %s", url or "(none)")
+        self._photos_url = url
+        if self._photo_task:
+            self._photo_task.cancel()
+            self._photo_task = None
+        self._on_photo(None, None, None)  # drop the old slideshow's photo
+        self._start_photos()
+
+    def _start_photos(self) -> None:
+        # Also when idle.mode isn't "photos": the slideshow can be switched on during music.
+        if not (self.screen.running and self._photos_url):
+            return
+        cfg = dataclasses.replace(self.cfg.photos, url=self._photos_url)
+        fetcher = PhotoFrameFetcher(cfg, self._on_photo)
+        self._photo_task = asyncio.create_task(fetcher.run(), name="photoframe")
 
     def _set_update_notice(self, text: str | None) -> None:
         """The "update available" popup on the screen (None = no popup)."""

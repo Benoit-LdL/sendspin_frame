@@ -3,12 +3,13 @@
 Creates a device with:
   - a "Screen during music" select (Cover art / Photo slideshow)
   - a "System stats on screen" switch (CPU / RAM / temperature overlay)
+  - a "Photo Frames URL" text (the slideshow's public Photo Frames link)
   - diagnostic sensors, refreshed every `mqtt.stats_interval` seconds: CPU temperature, CPU
     frequency, CPU use, RAM use, free memory, uptime, IP address, MAC address, WiFi signal
   - with [updates]: "System package updates" and "sendspin-frame updates" counters, an
     "Update status" sensor, and "Check for updates" / "Update system packages" /
     "Update sendspin-frame" buttons (see updates.py)
-The select and switch states are published as retained messages, so the choices survive
+The select, switch and text states are published as retained messages, so the choices survive
 restarts of sendspin-frame and of Home Assistant.
 
 Topics (<id> is the player name, lower case, e.g. "tv"):
@@ -45,7 +46,7 @@ PRESS = "PRESS"
 class Entity:
     """One Home Assistant entity, with the mapping between our values and MQTT payloads.
 
-    select / switch: `to_payload`, `get` and `set`. Their state is restored from the broker.
+    select / switch: `to_payload`, `get` and `set`; text: `get` and `set` (free text). Their state is restored from the broker.
     sensor: `get` (None = unknown, nothing published) and optionally `attributes`.
     button: `press`.
     `extra` holds more discovery options (unit_of_measurement, entity_category, ...).
@@ -64,13 +65,15 @@ class Entity:
 
     @property
     def restorable(self) -> bool:
-        return self.set is not None and bool(self.to_payload)
+        return self.set is not None and (bool(self.to_payload) or self.component == "text")
 
     @property
     def has_command(self) -> bool:
         return self.set is not None or self.press is not None
 
     def parse(self, payload: str) -> Any:
+        if self.component == "text":
+            return payload.strip()
         for value, text in self.to_payload.items():
             if payload == text or (isinstance(value, str) and payload.lower() == value):
                 return value
@@ -99,13 +102,19 @@ def node_id(name: str) -> str:
 
 def make_entities(get_music_screen: Callable[[], str], set_music_screen: Callable[[str], None],
                   get_show_stats: Callable[[], bool],
-                  set_show_stats: Callable[[bool], None]) -> list[Entity]:
+                  set_show_stats: Callable[[bool], None],
+                  get_photos_url: Callable[[], str],
+                  set_photos_url: Callable[[str], None]) -> list[Entity]:
     return [
         Entity("music_screen", "select", "Screen during music", "mdi:television-play",
                {"cover": "Cover art", "photos": "Photo slideshow"},
                get_music_screen, set_music_screen),
         Entity("show_stats", "switch", "System stats on screen", "mdi:chip",
                {True: "ON", False: "OFF"}, get_show_stats, set_show_stats),
+        # max: Home Assistant's limit for a state.
+        Entity("photos_url", "text", "Photo Frames URL", "mdi:image-multiple",
+               get=get_photos_url, set=set_photos_url,
+               extra={"entity_category": "config", "max": 255}),
     ]
 
 
@@ -329,4 +338,5 @@ class MqttBridge:
             return
         if value != e.get():
             e.set(value)
-        await client.publish(self.state_topic(e), e.to_payload[value], qos=1, retain=True)
+        await client.publish(self.state_topic(e), e.to_payload.get(value, str(value)),
+                             qos=1, retain=True)
