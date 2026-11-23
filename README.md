@@ -152,7 +152,7 @@ the defaults until the first change in Home Assistant; after that, Home Assistan
 The device also has diagnostic sensors, like an ESPHome speaker: **CPU temperature**, **CPU
 frequency**, **CPU use**, **RAM use**, **Free memory**, **Uptime**, **IP address**, **MAC
 address** and **WiFi signal** (stays unknown on a wired connection). They update every
-`mqtt.stats_interval` seconds (default 10; 0 switches them off).
+`mqtt.stats_interval` seconds (default 30; 0 switches them off).
 
 #### Updates from Home Assistant
 The same device also gets (switch off with `updates.enabled = false`):
