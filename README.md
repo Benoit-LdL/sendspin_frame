@@ -13,6 +13,8 @@ seconds and leaves the Pi's 512 MB of RAM and CPU for the audio.
 | ![Now playing](docs/screenshots/now-playing.jpg) | ![Photo frame](docs/screenshots/photo-frame.jpg) |
 | **Paused, no cover art** | **Idle without photos** |
 | ![Paused](docs/screenshots/now-playing-paused-no-art.jpg) | ![Clock](docs/screenshots/idle-clock.jpg) |
+| **Slideshow during music** | **Pairing with Music Assistant** |
+| ![Slideshow during music](docs/screenshots/photo-frame-music.jpg) | ![Pairing code](docs/screenshots/pairing.jpg) |
 
 Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing-portrait.jpg)).
 
@@ -23,7 +25,8 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
   the same.
 - **Now playing screen.** Shows the cover art on a blurred backdrop taken from the cover. Long
   titles wrap and get truncated. The progress bar colour comes from the artwork. There is a pause
-  indicator. Track changes crossfade.
+  indicator. Track changes crossfade. The Music Assistant logo in the top-right corner shows the
+  connection, as on the photo frame.
 - **Photo frame when idle.** Shows the current photo of your Nextcloud Photo Frames frame,
   including where and when it was taken, with a clock and the date. A small Music Assistant logo
   in the corner shows the connection: green when connected, red when not. The frame's rotation schedule
