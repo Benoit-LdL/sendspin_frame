@@ -11,6 +11,7 @@ import asyncio
 import dataclasses
 import logging
 import time
+from pathlib import Path
 
 import aiohttp
 from aiosendspin.client import SendspinClient
@@ -28,6 +29,24 @@ from .state import Track
 logger = logging.getLogger(__name__)
 
 ARTWORK_URL_FALLBACK_S = 3.0
+# Forget a pairing code that was never cleared (pairing abandoned), as the screen does.
+PAIRING_TIMEOUT_S = 300
+RUN_RECORD = "sendspin-frame-run.json"
+
+
+def install_id() -> str:
+    """The installed commit (install.sh records it), else the package version."""
+    from .update_helper import UPDATE_CONF, parse_update_conf
+
+    try:
+        commit = parse_update_conf(UPDATE_CONF.read_text()).get("COMMIT")
+    except OSError:
+        commit = None
+    if commit:
+        return commit
+    from .mqtt import _sw_version
+
+    return _sw_version()
 
 
 class FrameRuntime:
@@ -52,10 +71,24 @@ class FrameRuntime:
         self._art_url: str | None = None
         self._art_url_task: asyncio.Task | None = None
         self.sendspin_id: str | None = None  # our player id on the Sendspin side
+        self.state_dir: Path | None = None  # the sendspin settings directory (set by the daemon)
+        self._bridge = None  # mqtt.MqttBridge, with [mqtt]
+        # What Home Assistant's media sensors show ("" = nothing, pairing code None = none).
+        self._media: dict[str, str | None] = {
+            "track_title": "", "artist": "", "album": "", "pairing_code": None}
+        self._pairing_clear: asyncio.Task | None = None
+        self._run = None  # sysstats.RunRecord
 
     # ------------------------------------------------------------------ lifecycle
 
     async def start(self) -> None:
+        reset_reason = None
+        if self.state_dir is not None:
+            from .sysstats import RunRecord
+
+            self._run = RunRecord(self.state_dir / RUN_RECORD, install_id())
+            reset_reason = self._run.start()
+            logger.info("Started: %s", reset_reason)
         await asyncio.to_thread(self.screen.start)
         self._start_photos()
         ma = self.cfg.music_assistant
@@ -86,6 +119,8 @@ class FrameRuntime:
             from .mqtt import (
                 MqttBridge,
                 make_entities,
+                make_media_entities,
+                make_restart_entity,
                 make_stats_entities,
                 make_update_entities,
             )
@@ -93,7 +128,9 @@ class FrameRuntime:
             entities = make_entities(lambda: self._music_screen, self.set_music_screen,
                                      lambda: self._show_stats, self.set_show_stats,
                                      lambda: self._photos_url, self.set_photos_url)
-            stats: dict[str, object] = {}
+            entities += make_media_entities(self._media.get)
+            entities.append(make_restart_entity(self._request_restart))
+            stats: dict[str, object] = {"reset_reason": reset_reason}
             stats_keys: list[str] = []
             if self.cfg.mqtt.stats_interval > 0:
                 stats_entities = make_stats_entities(stats.get)
@@ -102,6 +139,7 @@ class FrameRuntime:
             if updates is not None:
                 entities += make_update_entities(updates)
             bridge = MqttBridge(self.cfg.mqtt, self.cfg.sendspin.name, entities)
+            self._bridge = bridge
             if updates is not None:
                 to_screen = updates.on_change
 
@@ -117,15 +155,45 @@ class FrameRuntime:
 
     async def _publish_stats(self, bridge, stats: dict[str, object], keys: list[str]) -> None:
         """Refresh the diagnostic sensors in Home Assistant (a few small /proc and /sys reads)."""
-        from .sysstats import StatsReader
+        from .sysstats import LoopTimer, StatsReader
 
         reader = StatsReader()
-        while True:
-            stats.update(reader.details())
-            bridge.notify(*keys)
-            await asyncio.sleep(self.cfg.mqtt.stats_interval)
+        timer = LoopTimer()
+        timer_task = asyncio.create_task(timer.run(), name="loop-timer")
+        try:
+            while True:
+                stats.update(reader.details(), loop_time=timer.take())
+                bridge.notify(*keys)
+                await asyncio.sleep(self.cfg.mqtt.stats_interval)
+        finally:
+            timer_task.cancel()
+
+    def _request_restart(self) -> None:
+        """The "Restart" button: reboot the Pi through the root helper (see update_helper.py)."""
+        task = asyncio.create_task(self._restart(), name="restart")
+        self._tasks.append(task)
+
+    async def _restart(self) -> None:
+        logger.info("Restart requested from Home Assistant: rebooting the Pi")
+        if self._run:
+            self._run.restart_requested()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "sudo", "-n", self.cfg.updates.helper, "reboot",
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+            _, err = await proc.communicate()
+            failed = proc.returncode != 0 and (err.decode(errors="replace").strip()
+                                               or f"exit {proc.returncode}")
+        except OSError as exc:
+            failed = str(exc)
+        if failed:
+            logger.warning("Restart failed: %s (is install.sh's sudoers rule there?)", failed)
+            if self._run:
+                self._run.restart_requested(False)
 
     async def stop(self) -> None:
+        if self._run:
+            self._run.stopped()
         if self._photo_task:
             self._photo_task.cancel()
         for task in self._tasks:
@@ -181,6 +249,28 @@ class FrameRuntime:
         fetcher = PhotoFrameFetcher(cfg, self._on_photo)
         self._photo_task = asyncio.create_task(fetcher.run(), name="photoframe")
 
+    def _set_media(self, **values: str | None) -> None:
+        """Update Home Assistant's media sensors (only what changed is sent)."""
+        changed = [k for k, v in values.items() if self._media.get(k) != v]
+        self._media.update(values)
+        if changed and self._bridge is not None:
+            self._bridge.notify(*changed)
+
+    def set_pairing_code(self, code: str | None) -> None:
+        """The code Music Assistant asks for (None once paired): on the screen and in HA."""
+        self.screen.send("pairing", code)
+        self._set_media(pairing_code=code)
+        if self._pairing_clear:
+            self._pairing_clear.cancel()
+            self._pairing_clear = None
+        if code:
+            self._pairing_clear = asyncio.create_task(self._forget_pairing_code(code))
+
+    async def _forget_pairing_code(self, code: str) -> None:
+        await asyncio.sleep(PAIRING_TIMEOUT_S)
+        if self._media.get("pairing_code") == code:
+            self._set_media(pairing_code=None)
+
     def _set_update_notice(self, text: str | None) -> None:
         """The "update available" popup on the screen (None = no popup)."""
         if text != self._update_notice:
@@ -208,6 +298,7 @@ class FrameRuntime:
     def _on_disconnect(self) -> None:
         self._group_playback = None
         self._set_connection(False)
+        self._set_media(track_title="", artist="", album="")
 
     def _on_group_update(self, payload: GroupUpdateServerPayload) -> None:
         self._mark_connected()
@@ -220,7 +311,10 @@ class FrameRuntime:
         md = getattr(payload, "metadata", None) if payload is not None else None
         if not isinstance(md, SessionUpdateMetadata) or not (md.title or md.artist):
             self.screen.send("track", None)
+            self._set_media(track_title="", artist="", album="")
             return
+        # As the server sends them, like on Sendspin's ESPHome players.
+        self._set_media(track_title=md.title or "", artist=md.artist or "", album=md.album or "")
         progress_ms = duration_ms = None
         speed = 1000
         if md.progress is not None:
@@ -279,6 +373,10 @@ class FrameDaemon(daemon_mod.SendspinDaemon):
     runtime: FrameRuntime  # set by the CLI before the daemon is constructed
 
     async def run(self) -> int:
+        # Where sendspin keeps its settings (--settings-dir; ~/.config/sendspin by default).
+        settings_file = getattr(getattr(self._args, "settings", None), "_settings_file", None)
+        self.runtime.state_dir = (Path(settings_file).parent if settings_file
+                                  else Path.home() / ".config" / "sendspin")
         await self.runtime.start()
         try:
             return await super().run()
@@ -310,7 +408,7 @@ class FrameDaemon(daemon_mod.SendspinDaemon):
     async def _show_pairing_code(self, pairing_code: str | None, *, grouped: str | None) -> None:
         """Music Assistant asks for the code "shown on the device's screen": show it there."""
         await super()._show_pairing_code(pairing_code, grouped=grouped)
-        self.runtime.screen.send("pairing", grouped)
+        self.runtime.set_pairing_code(grouped)
 
     def _attach_client(self, client: SendspinClient) -> None:
         super()._attach_client(client)

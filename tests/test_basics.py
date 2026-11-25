@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 
 import numpy as np
 import pytest
@@ -241,15 +242,26 @@ def test_sysstats_details_and_mqtt_sensors(tmp_path):
     (proc / "stat").write_text("cpu  150 0 150 900 0 0 0 0 0 0\n")
     d = reader.details()
     d.pop("ip_address")  # depends on the machine running the test
+    boot = datetime.fromisoformat(d.pop("uptime"))
+    assert abs(boot.timestamp() - (time.time() - 11584)) < 5 and boot.utcoffset() is not None
     assert d == {"cpu_temperature": 25.9, "cpu_frequency": 2400.0, "cpu_use": 50.0,
-                 "ram_use": 50.0, "free_memory": 2.0, "uptime": 11584,
+                 "ram_use": 50.0, "free_memory": 2.0,
                  "mac_address": "d8:3a:dd:00:11:22", "wifi_signal": -46.0}
+    # A few seconds of jitter isn't a new value; the clock being set (NTP after boot) is.
+    reader._boot += 7
+    kept = reader._boot
+    assert reader.details()["uptime"] == datetime.fromtimestamp(
+        kept, UTC).isoformat(timespec="seconds")
+    reader._boot -= 3600
+    reader.details()
+    assert abs(reader._boot - (time.time() - 11584)) < 5
 
     empty = StatsReader(str(tmp_path / "none"), str(tmp_path / "none")).details()
-    assert set(empty) == set(d) | {"ip_address"} and not any(empty.values())
+    assert set(empty) == set(d) | {"ip_address", "uptime"} and not any(empty.values())
 
+    d["loop_time"], d["reset_reason"] = 2.5, "Pi restarted"
     ents = make_stats_entities(d.get)
-    assert {e.key for e in ents} == set(empty)
+    assert {e.key for e in ents} == set(empty) | {"loop_time", "reset_reason"}
     by_key = {e.key: e for e in ents}
     b = MqttBridge(MqttConfig(host="x"), "TV", ents)
     p = json.loads(b.discovery_payload(by_key["wifi_signal"]))
@@ -259,6 +271,102 @@ def test_sysstats_details_and_mqtt_sensors(tmp_path):
     assert "unit_of_measurement" not in json.loads(b.discovery_payload(by_key["mac_address"]))
     assert by_key["wifi_signal"].state_payload() == "-46.0"
     assert by_key["ip_address"].state_payload() is None  # unknown: nothing published
+    p = json.loads(b.discovery_payload(by_key["uptime"]))
+    assert p["device_class"] == "timestamp" and "state_class" not in p
+    assert "unit_of_measurement" not in p
+    p = json.loads(b.discovery_payload(by_key["loop_time"]))
+    assert (p["unit_of_measurement"], p["device_class"]) == ("ms", "duration")
+    assert p["suggested_display_precision"] == 1
+    assert by_key["reset_reason"].state_payload() == "Pi restarted"
+
+
+def test_mqtt_media_sensors_and_restart_button():
+    import json
+
+    from sendspin_frame.config import MqttConfig
+    from sendspin_frame.mqtt import MqttBridge, make_media_entities, make_restart_entity
+
+    media = {"track_title": "湘南ビーチFM", "artist": "", "album": "78.9 | 湘南ビーチFM (Jazz)",
+             "pairing_code": None}
+    pressed = []
+    ents = make_media_entities(media.get) + [make_restart_entity(lambda: pressed.append(1))]
+    by_key = {e.key: e for e in ents}
+    b = MqttBridge(MqttConfig(host="x"), "TV", ents)
+    p = json.loads(b.discovery_payload(by_key["track_title"]))
+    assert p["name"] == "Track title" and p["state_topic"] == "sendspin_frame/tv/track_title"
+    assert "entity_category" not in p  # with the controls, not under Diagnostic
+    assert by_key["album"].state_payload() == "78.9 | 湘南ビーチFM (Jazz)"
+    assert by_key["artist"].state_payload() == ""  # empty, as on ESPHome
+    assert by_key["pairing_code"].state_payload() == "None"  # Home Assistant: unknown
+    media["pairing_code"] = "123 456"
+    assert by_key["pairing_code"].state_payload() == "123 456"
+    p = json.loads(b.discovery_payload(by_key["restart"]))
+    assert b.discovery_topic(by_key["restart"]) == "homeassistant/button/tv/restart/config"
+    assert (p["device_class"], p["entity_category"]) == ("restart", "config")
+    assert p["command_topic"] == "sendspin_frame/tv/restart/set" and "state_topic" not in p
+
+
+def test_run_record_reset_reason(tmp_path):
+    from sendspin_frame.sysstats import RunRecord
+
+    boot = tmp_path / "boot_id"
+    path = tmp_path / "state" / "run.json"
+
+    def start(boot_id: str, version: str = "v1") -> tuple[RunRecord, str]:
+        boot.write_text(boot_id + "\n")
+        r = RunRecord(path, version, str(boot))
+        return r, r.start()
+
+    r, why = start("a")
+    assert why == "First start"
+    r.stopped()
+    assert start("a")[1] == "sendspin-frame restarted"  # ...and this run never stops
+    r, why = start("a")
+    assert why == "sendspin-frame crashed"
+    r.stopped()
+    r, why = start("a", "v2")
+    assert why == "sendspin-frame updated"
+    r.stopped()
+    r, why = start("b", "v2")
+    assert why == "Pi restarted"
+    assert start("c", "v2")[1] == "Power loss or crash"
+    r, _ = start("c", "v2")
+    r.restart_requested()
+    r.stopped()
+    assert start("d", "v2")[1] == "Restart from Home Assistant"
+    r, _ = start("d", "v2")
+    r.restart_requested()
+    r.restart_requested(False)  # the reboot failed
+    r.stopped()
+    assert start("e", "v2")[1] == "Pi restarted"
+    path.write_text("not json")
+    assert start("e", "v2")[1] == "First start"
+
+
+def test_loop_timer_reports_the_worst_delay():
+    import asyncio
+
+    from sendspin_frame.sysstats import LoopTimer
+
+    t = LoopTimer()
+    assert t.take() is None
+    t.add(1.26)
+    t.add(-0.2)
+    t.add(0.5)
+    assert t.take() == 1.3 and t.take() is None
+    t.add(-0.3)
+    assert t.take() == 0.0
+
+    async def blocked() -> float | None:
+        t.TICK_S = 0.01
+        task = asyncio.create_task(t.run())
+        await asyncio.sleep(0.02)
+        time.sleep(0.1)  # holds the loop up
+        await asyncio.sleep(0.03)
+        task.cancel()
+        return t.take()
+
+    assert asyncio.run(blocked()) >= 50
 
 
 def test_stats_overlay_toggles_on_and_off():

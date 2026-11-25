@@ -41,8 +41,11 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
   packages and Python packages can be updated, and whether there is a newer sendspin-frame. The
   counts show up as sensors, and buttons install the updates. A small popup on the screen
   tells you when there is a newer sendspin-frame.
+- **What's playing, in Home Assistant.** Track title, artist, album and the Sendspin pairing
+  code as sensors, the same ones a Sendspin ESPHome speaker has, so one dashboard card fits both.
 - **Diagnostic sensors in Home Assistant.** CPU temperature, frequency and use, memory, uptime,
-  IP and MAC address, WiFi signal: the same figures an ESPHome speaker reports.
+  loop time, reset reason, IP and MAC address, WiFi signal: the same figures an ESPHome speaker
+  reports, plus a **Restart** button.
 - **Optional system stats.** CPU use, RAM use and CPU temperature in the top-left corner.
 - **OLED burn-in protection.** Optionally moves the picture by a few pixels every few minutes.
 - **Optional night mode.** The screen switches off in a time window you choose, and wakes up when
@@ -149,10 +152,30 @@ These three are kept across restarts and can be used in automations, for example
 during the evening. `now_playing.screen`, `display.show_stats` and `photos.url` in the config are
 the defaults until the first change in Home Assistant; after that, Home Assistant's value wins.
 
-The device also has diagnostic sensors, like an ESPHome speaker: **CPU temperature**, **CPU
-frequency**, **CPU use**, **RAM use**, **Free memory**, **Uptime**, **IP address**, **MAC
-address** and **WiFi signal** (stays unknown on a wired connection). They update every
-`mqtt.stats_interval` seconds (default 30; 0 switches them off).
+What's playing, as on a Sendspin ESPHome speaker (so the same dashboard card works for both):
+- **Track title**, **Artist** and **Album**: as Music Assistant sends them, so for a radio
+  station the title can be the station and the album the frequency and genre. Empty when
+  nothing plays or the player is disconnected.
+- **Sendspin pairing code**: the code Music Assistant asks for when it pairs with the player
+  (it's also shown full screen). *Unknown* the rest of the time.
+
+The device also has diagnostic sensors, like an ESPHome speaker:
+- **CPU temperature**, **CPU frequency**, **CPU use**, **RAM use**, **Free memory**.
+- **Uptime**: when the Pi started; Home Assistant shows it as "2 days ago".
+- **Loop time**: the longest the player's main loop (the one that feeds the audio) was held up
+  since the previous update, in ms. A few ms is normal; tens of ms or more and the audio may
+  stutter.
+- **Reset reason**: why sendspin-frame last started: *Pi restarted*, *Power loss or crash*,
+  *Restart from Home Assistant*, *sendspin-frame updated*, *sendspin-frame restarted*,
+  *sendspin-frame crashed* or *First start*. Kept in `sendspin-frame-run.json` in the settings
+  directory (`/var/lib/sendspin-frame`).
+- **IP address**, **MAC address** and **WiFi signal** (stays unknown on a wired connection).
+
+They update every `mqtt.stats_interval` seconds (default 30; 0 switches them off).
+
+A **Restart** button (under *Configuration*) reboots the Pi, like an ESPHome device's. It goes
+through the same root helper as the update buttons (installed by `install.sh`), and does
+nothing while an update is installing.
 
 #### Updates from Home Assistant
 The same device also gets (switch off with `updates.enabled = false`):

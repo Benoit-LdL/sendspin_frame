@@ -4,8 +4,12 @@ Creates a device with:
   - a "Screen during music" select (Cover art / Photo slideshow)
   - a "System stats on screen" switch (CPU / RAM / temperature overlay)
   - a "Photo Frames URL" text (the slideshow's public Photo Frames link)
+  - "Track title", "Artist", "Album" and "Sendspin pairing code" sensors, as Sendspin's ESPHome
+    players have them
+  - a "Restart" button (reboots the Pi, through the root helper of updates.py)
   - diagnostic sensors, refreshed every `mqtt.stats_interval` seconds: CPU temperature, CPU
-    frequency, CPU use, RAM use, free memory, uptime, IP address, MAC address, WiFi signal
+    frequency, CPU use, RAM use, free memory, uptime (when the Pi started), loop time, reset
+    reason, IP address, MAC address, WiFi signal
   - with [updates]: "System package updates" and "sendspin-frame updates" counters, an
     "Update status" sensor, and "Check for updates" / "Update system packages" /
     "Update sendspin-frame" buttons (see updates.py)
@@ -47,7 +51,8 @@ class Entity:
     """One Home Assistant entity, with the mapping between our values and MQTT payloads.
 
     select / switch: `to_payload`, `get` and `set`; text: `get` and `set` (free text). Their state is restored from the broker.
-    sensor: `get` (None = unknown, nothing published) and optionally `attributes`.
+    sensor: `get` (None = unknown: nothing published, or "None" with `publish_none`, which
+    Home Assistant shows as unknown) and optionally `attributes`.
     button: `press`.
     `extra` holds more discovery options (unit_of_measurement, entity_category, ...).
     """
@@ -62,6 +67,7 @@ class Entity:
     press: Callable[[], None] | None = None
     attributes: Callable[[], dict[str, Any]] | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    publish_none: bool = False
 
     @property
     def restorable(self) -> bool:
@@ -84,7 +90,7 @@ class Entity:
             return None
         value = self.get()
         if value is None:
-            return None
+            return "None" if self.publish_none else None
         return self.to_payload.get(value, str(value))
 
 
@@ -118,16 +124,40 @@ def make_entities(get_music_screen: Callable[[], str], set_music_screen: Callabl
     ]
 
 
+def make_media_entities(get: Callable[[str], str | None]) -> list[Entity]:
+    """What's playing and the pairing code, like Sendspin's ESPHome players show them.
+
+    `get(key)`: the text as the server sent it ("" = none); for the pairing code None when not
+    pairing, which Home Assistant shows as "Unknown", as on ESPHome.
+    """
+    return [
+        Entity("track_title", "sensor", "Track title", "mdi:music-note",
+               get=lambda: get("track_title")),
+        Entity("artist", "sensor", "Artist", "mdi:account-music", get=lambda: get("artist")),
+        Entity("album", "sensor", "Album", "mdi:album", get=lambda: get("album")),
+        Entity("pairing_code", "sensor", "Sendspin pairing code", "mdi:link-variant",
+               get=lambda: get("pairing_code"), publish_none=True),
+    ]
+
+
+def make_restart_entity(press: Callable[[], None]) -> Entity:
+    return Entity("restart", "button", "Restart", "mdi:restart", press=press,
+                  extra={"device_class": "restart", "entity_category": "config"})
+
+
 def make_stats_entities(get: Callable[[str], Any]) -> list[Entity]:
-    """Diagnostic sensors; `get(key)` gives the latest value (see StatsReader.details)."""
+    """Diagnostic sensors; `get(key)` gives the latest value (see StatsReader.details, plus
+    "loop_time" from LoopTimer and "reset_reason" from RunRecord)."""
 
     def sensor(key: str, name: str, icon: str, unit: str | None = None,
-               device_class: str | None = None, state_class: str = "measurement") -> Entity:
+               device_class: str | None = None, state_class: str = "measurement",
+               **more: Any) -> Entity:
         extra: dict[str, Any] = {"entity_category": "diagnostic"}
         if unit:
             extra.update(unit_of_measurement=unit, state_class=state_class)
         if device_class:
             extra["device_class"] = device_class
+        extra.update(more)
         return Entity(key, "sensor", name, icon, get=lambda: get(key), extra=extra)
 
     return [
@@ -136,7 +166,11 @@ def make_stats_entities(get: Callable[[str], Any]) -> list[Entity]:
         sensor("cpu_use", "CPU use", "mdi:cpu-64-bit", "%"),
         sensor("ram_use", "RAM use", "mdi:memory", "%"),
         sensor("free_memory", "Free memory", "mdi:memory", "MB", "data_size"),
-        sensor("uptime", "Uptime", "mdi:clock-outline", "s", "duration", "total_increasing"),
+        # When the Pi started, as ESPHome's uptime sensor: Home Assistant shows "2 days ago".
+        sensor("uptime", "Uptime", "mdi:clock-outline", device_class="timestamp"),
+        sensor("loop_time", "Loop time", "mdi:sync", "ms", "duration",
+               suggested_display_precision=1),
+        sensor("reset_reason", "Reset reason", "mdi:restart-alert"),
         sensor("ip_address", "IP address", "mdi:ip-network"),
         sensor("mac_address", "MAC address", "mdi:network-outline"),
         sensor("wifi_signal", "WiFi signal", "mdi:wifi", "dBm", "signal_strength"),

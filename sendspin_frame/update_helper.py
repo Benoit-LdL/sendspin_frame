@@ -1,4 +1,4 @@
-"""Root helper: checks for and installs updates. Run as `sendspin-frame-update <action>`.
+"""Root helper: checks for and installs updates, reboots. Run as `sendspin-frame-update <action>`.
 
 The service runs as the unprivileged `sendspin` user, so install.sh puts a tiny wrapper at
 /usr/local/sbin/sendspin-frame-update (which runs this module with the venv's Python) and a
@@ -13,6 +13,7 @@ Actions:
     app       Fetch the newest sendspin-frame into /usr/local/src/sendspin-frame and run its
               install.sh (which upgrades the Python packages and restarts the service). Without
               a known git origin, it only upgrades the Python packages and restarts.
+    reboot    Restart the Pi (the "Restart" button in Home Assistant).
 
 `system` and `app` run detached, as a transient systemd unit (sendspin-frame-update.service),
 so they survive the restart of sendspin-frame that an update brings, and so stopping
@@ -232,6 +233,12 @@ def update_app() -> None:
         run(["systemctl", "restart", SERVICE])
 
 
+def _unit_active() -> bool:
+    """An update (system or app) is running right now."""
+    proc = subprocess.run(["systemctl", "is-active", "--quiet", UNIT], check=False)
+    return proc.returncode == 0
+
+
 def run_detached(action: str) -> int:
     """Run `action` as a transient systemd unit and wait for it; its output goes to the journal."""
     if not shutil.which("systemd-run"):
@@ -251,8 +258,8 @@ def main(argv: list[str] | None = None) -> int:
     args = [a for a in (sys.argv[1:] if argv is None else argv)]
     detached = "--detached" in args
     args = [a for a in args if a != "--detached"]
-    if len(args) != 1 or args[0] not in ("check", "system", "app"):
-        print("usage: sendspin-frame-update check|system|app", file=sys.stderr)
+    if len(args) != 1 or args[0] not in ("check", "system", "app", "reboot"):
+        print("usage: sendspin-frame-update check|system|app|reboot", file=sys.stderr)
         return 2
     action = args[0]
     if os.geteuid() != 0:
@@ -261,6 +268,11 @@ def main(argv: list[str] | None = None) -> int:
     if action == "check":
         print(json.dumps(check()))
         return 0
+    if action == "reboot":
+        if shutil.which("systemd-run") and _unit_active():
+            print("not restarting: an update is running", file=sys.stderr)
+            return 1
+        return subprocess.run(["systemctl", "reboot"], check=False).returncode
     if not detached:
         return run_detached(action)
     try:

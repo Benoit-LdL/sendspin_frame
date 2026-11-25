@@ -88,6 +88,14 @@ docs/screenshots/            README screenshots
   temperature / frequency / use, RAM use, free memory, uptime, IP, MAC, WiFi signal
   (`StatsReader.details()`, `make_stats_entities`, `FrameRuntime._publish_stats`, every
   `mqtt.stats_interval` s). **Not yet tried on the Pi.**
+- ESPHome parity (2026-11-25), so the TV fits the same dashboard card as the speakers: media
+  sensors Track title / Artist / Album (raw from the Sendspin metadata, "" when none) and
+  Sendspin pairing code (`FrameRuntime.set_pairing_code`; "None" = unknown, forgotten after
+  5 min like on screen), all in `make_media_entities`. Uptime is now a timestamp (boot time),
+  plus Loop time (`sysstats.LoopTimer`: worst asyncio delay per interval), Reset reason
+  (`sysstats.RunRecord`, `sendspin-frame-run.json` in the settings dir: boot id, installed
+  commit, clean stop) and a Restart button (`sendspin-frame-update reboot`, refused while an
+  update unit runs). **Not yet tried on the Pi.**
 - Update popup on the screen (2026-11-10): `UpdateManager.screen_notice()` -> screen message
   `update_notice` -> `Snapshot.update_notice`, drawn by the engine as a pill in the top-left
   overlay (same box as the stats, under them). Only for sendspin-frame itself (`app_behind`).

@@ -1,9 +1,18 @@
-"""CPU, memory, uptime and network figures, read straight from /proc and /sys (Linux)."""
+"""CPU, memory, uptime and network figures, read straight from /proc and /sys (Linux).
+
+Also, for Home Assistant: how long the audio process's event loop was held up (LoopTimer) and
+why sendspin-frame last (re)started (RunRecord).
+"""
 
 from __future__ import annotations
 
+import asyncio
+import json
+import os
 import socket
+import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +42,7 @@ class StatsReader:
         self.sys = Path(sys)
         self.thermal = Path(sys) / "class/thermal/thermal_zone0/temp"
         self._last_cpu: tuple[int, int] | None = self._cpu_times()
+        self._boot: float | None = None
 
     def _cpu_times(self) -> tuple[int, int] | None:
         try:
@@ -93,6 +103,20 @@ class StatsReader:
         except (OSError, ValueError, IndexError):
             return None
 
+    def _last_boot(self) -> str | None:
+        """When the Pi started, as an ISO time (Home Assistant shows "2 days ago").
+
+        Worked out from the uptime, so it follows the clock being set after boot (the Pi has
+        no clock of its own); a jitter of a few seconds is ignored, so the value stays put.
+        """
+        up = self._uptime()
+        if up is None:
+            return None
+        boot = time.time() - up
+        if self._boot is None or abs(boot - self._boot) > 60:
+            self._boot = boot
+        return datetime.fromtimestamp(self._boot, UTC).isoformat(timespec="seconds")
+
     def _interface(self) -> str | None:
         """The network interface of the default route (the lowest metric wins)."""
         best: tuple[int, str] | None = None
@@ -149,9 +173,100 @@ class StatsReader:
             "cpu_use": self._cpu(),
             "ram_use": None if mem is None else 100.0 * (mem[0] - mem[1]) / mem[0],
             "free_memory": None if mem is None else mem[1] / 1024,  # MB
-            "uptime": self._uptime(),
+            "uptime": self._last_boot(),
             "ip_address": self._ip() if interface else None,
             "mac_address": self._mac(interface),
             "wifi_signal": self._wifi_dbm(interface),
         }
         return {k: round(v, 1) if isinstance(v, float) else v for k, v in values.items()}
+
+
+class LoopTimer:
+    """How long the asyncio loop (the audio process's) was held up: Home Assistant's "Loop time".
+
+    Like ESPHome's loop time it shows when something keeps the process from doing its work. Here
+    it's the longest delay of a tick, so a few ms is normal; a high value means the audio may
+    stutter.
+    """
+
+    TICK_S = 0.5
+
+    def __init__(self) -> None:
+        self._worst: float | None = None
+
+    async def run(self) -> None:
+        loop = asyncio.get_running_loop()
+        while True:
+            start = loop.time()
+            await asyncio.sleep(self.TICK_S)
+            self.add((loop.time() - start - self.TICK_S) * 1000)
+
+    def add(self, late_ms: float) -> None:
+        self._worst = late_ms if self._worst is None else max(self._worst, late_ms)
+
+    def take(self) -> float | None:
+        """The longest delay (ms) since the previous call; None before the first tick."""
+        worst, self._worst = self._worst, None
+        return None if worst is None else round(max(0.0, worst), 1)
+
+
+class RunRecord:
+    """Why sendspin-frame (re)started: Home Assistant's "Reset reason".
+
+    A small JSON file (in the settings directory) remembers the boot, the installed version and
+    whether the last run stopped cleanly. Stopping the service, rebooting and updating all stop
+    it cleanly; a power cut or a crash doesn't.
+    """
+
+    def __init__(self, path: Path | str, version: str,
+                 boot_id_file: str = "/proc/sys/kernel/random/boot_id") -> None:
+        self.path = Path(path)
+        self.version = version
+        try:
+            self.boot_id = Path(boot_id_file).read_text().strip()
+        except OSError:
+            self.boot_id = ""
+        self._data: dict[str, Any] = {}
+
+    def start(self) -> str:
+        """Record this start and return why it happened."""
+        try:
+            last = json.loads(self.path.read_text())
+            if not isinstance(last, dict):
+                raise ValueError
+        except (OSError, ValueError):
+            last = None
+        self._data = {"boot_id": self.boot_id, "version": self.version, "clean": False}
+        self._write()
+        return self.reason(last)
+
+    def reason(self, last: dict[str, Any] | None) -> str:
+        if last is None:
+            return "First start"
+        same_boot = bool(self.boot_id) and last.get("boot_id") == self.boot_id
+        if last.get("restart_requested") and not same_boot:
+            return "Restart from Home Assistant"
+        if not last.get("clean"):
+            return "sendspin-frame crashed" if same_boot else "Power loss or crash"
+        if not same_boot:
+            return "Pi restarted"
+        if last.get("version") != self.version:
+            return "sendspin-frame updated"
+        return "sendspin-frame restarted"
+
+    def restart_requested(self, requested: bool = True) -> None:
+        self._data["restart_requested"] = requested
+        self._write()
+
+    def stopped(self) -> None:
+        self._data["clean"] = True
+        self._write()
+
+    def _write(self) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self._data))
+            os.replace(tmp, self.path)
+        except OSError:
+            pass  # only the reset reason is lost

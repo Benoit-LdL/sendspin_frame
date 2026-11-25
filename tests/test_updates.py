@@ -53,6 +53,27 @@ def test_helper_usage_and_root_check():
     assert helper.main([]) == 2
 
 
+def test_helper_reboot_waits_for_updates(monkeypatch):
+    import subprocess
+
+    calls = []
+    busy = {"active": True}
+
+    def fake_run(cmd, check=False, **kw):
+        calls.append(cmd)
+        active = cmd[:2] == ["systemctl", "is-active"] and busy["active"]
+        return subprocess.CompletedProcess(cmd, 0 if active or cmd[1] == "reboot" else 3)
+
+    monkeypatch.setattr(helper.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(helper.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(helper.subprocess, "run", fake_run)
+    assert helper.main(["reboot"]) == 1  # an update is running: not now
+    assert ["systemctl", "reboot"] not in calls
+    busy["active"] = False
+    assert helper.main(["reboot"]) == 0
+    assert calls[-1] == ["systemctl", "reboot"]
+
+
 def test_report_counts():
     r = Report.from_dict({
         "system": {"packages": [{"name": "a", "installed": "1", "latest": "2"}],
