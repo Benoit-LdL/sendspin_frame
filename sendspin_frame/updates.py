@@ -41,6 +41,9 @@ _CONSOLE_TITLE = {
     ("app", "running"): "Updating sendspin-frame…",
     ("app", "done"): "sendspin-frame updated",
     ("app", "failed"): "sendspin-frame update failed",
+    ("all", "running"): "Updating system packages and sendspin-frame…",
+    ("all", "done"): "System packages and sendspin-frame updated",
+    ("all", "failed"): "Update failed",
 }
 
 STATUS_TEXT = {
@@ -48,6 +51,7 @@ STATUS_TEXT = {
     "checking": "Checking",
     "updating_system": "Updating system packages",
     "updating_app": "Updating sendspin-frame",
+    "updating_all": "Updating system packages and sendspin-frame",
     "failed": "Failed",
 }
 
@@ -161,7 +165,9 @@ class UpdateManager:
     def screen_summary(self, include_system: bool = True) -> str | None:
         """The updates line under the system stats: every update that is available (None =
         none), or with `include_system` False only sendspin-frame."""
-        if self.status == "updating_app":
+        if self.status == "updating_all" and include_system:
+            return "Updating system packages and sendspin-frame…"
+        if self.status in ("updating_app", "updating_all"):
             return "Updating sendspin-frame…"
         if self.status == "updating_system" and include_system:
             return "Updating system packages…"
@@ -219,7 +225,8 @@ class UpdateManager:
             self._spawn(self.check())
 
     def request_update(self, what: str) -> None:
-        """"Update system packages" / "Update sendspin-frame" buttons ("system" / "app")."""
+        """"Update system packages" / "Update sendspin-frame" / "Update all" buttons ("system" /
+        "app" / "all")."""
         if self.busy:
             logger.info("Updates: busy (%s), '%s' update request ignored", self.status, what)
             return
@@ -258,7 +265,7 @@ class UpdateManager:
             return True
 
     async def update(self, what: str) -> bool:
-        if what not in ("system", "app"):
+        if what not in ("system", "app", "all"):
             raise ValueError(what)
         if self.busy:
             return False

@@ -98,10 +98,10 @@ stats_interval = 30
 
 [updates]
 # Updates from Home Assistant (needs [mqtt]): the device gets "System package updates" and
-# "sendspin-frame updates" counters, an "Update status" sensor and three buttons: "Check for
-# updates", "Update system packages" (apt full-upgrade) and "Update sendspin-frame" (fetches
+# "sendspin-frame updates" counters, an "Update status" sensor and four buttons: "Check for
+# updates", "Update system packages" (apt full-upgrade), "Update sendspin-frame" (fetches
 # the newest code from the git origin it was installed from, re-runs install.sh, which also
-# upgrades the Python packages, and restarts). The buttons run through a small root helper
+# upgrades the Python packages, and restarts) and "Update all" (both, system first). The buttons run through a small root helper
 # that install.sh installs with a sudoers rule (/etc/sudoers.d/sendspin-frame).
 enabled = true
 # Show updates in the top-left corner of the screen: "Updates: sendspin-frame 3" whenever

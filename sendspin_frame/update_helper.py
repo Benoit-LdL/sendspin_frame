@@ -13,9 +13,10 @@ Actions:
     app       Fetch the newest sendspin-frame into /usr/local/src/sendspin-frame and run its
               install.sh (which upgrades the Python packages and restarts the service). Without
               a known git origin, it only upgrades the Python packages and restarts.
+    all       `system`, then `app` (in that order: `app` ends with the restart), in one go.
     reboot    Restart the Pi (the "Restart" button in Home Assistant).
 
-`system` and `app` run detached, as a transient systemd unit (sendspin-frame-update.service),
+`system`, `app` and `all` run detached, as a transient systemd unit (sendspin-frame-update.service),
 so they survive the restart of sendspin-frame that an update brings, and so stopping
 sendspin-frame can never interrupt dpkg half-way. The unit name doubles as a lock: a second
 update can't start while one runs. While it runs, the unit's output (from the journal) is
@@ -288,8 +289,8 @@ def main(argv: list[str] | None = None) -> int:
     args = [a for a in (sys.argv[1:] if argv is None else argv)]
     detached = "--detached" in args
     args = [a for a in args if a != "--detached"]
-    if len(args) != 1 or args[0] not in ("check", "system", "app", "reboot"):
-        print("usage: sendspin-frame-update check|system|app|reboot", file=sys.stderr)
+    if len(args) != 1 or args[0] not in ("check", "system", "app", "all", "reboot"):
+        print("usage: sendspin-frame-update check|system|app|all|reboot", file=sys.stderr)
         return 2
     action = args[0]
     if os.geteuid() != 0:
@@ -306,7 +307,10 @@ def main(argv: list[str] | None = None) -> int:
     if not detached:
         return run_detached(action)
     try:
-        update_system() if action == "system" else update_app()
+        if action in ("system", "all"):
+            update_system()
+        if action in ("app", "all"):
+            update_app()  # last: it restarts sendspin-frame
     except subprocess.CalledProcessError as exc:
         log(f"FAILED: {' '.join(exc.cmd)} exited with {exc.returncode}")
         return exc.returncode or 1

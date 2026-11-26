@@ -105,7 +105,8 @@ docs/screenshots/            README screenshots
   helper (`update_helper.py`, run as `sudo -n /usr/local/sbin/sendspin-frame-update`, allowed by
   `/etc/sudoers.d/sendspin-frame`, both installed by install.sh). Sensors "System package
   updates" / "sendspin-frame updates" (counts, lists in attributes), "Update status", and
-  buttons Check / Update system packages / Update sendspin-frame. The updates run as a transient
+  buttons Check / Update system packages / Update sendspin-frame / Update all (helper action
+  `all`: system then app in one unit, added 2026-11-26). The updates run as a transient
   unit (`systemd-run --unit sendspin-frame-update --wait`), so the restart that install.sh does
   can't kill dpkg. install.sh writes `/etc/sendspin-frame/update.conf` (ORIGIN / BRANCH /
   COMMIT of the checkout it ran from); the helper keeps its own clone in

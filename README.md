@@ -193,9 +193,10 @@ The same device also gets (switch off with `updates.enabled = false`):
 - **Update status** (diagnostic): *Idle*, *Checking*, *Updating ...* or *Failed*, with the time
   of the last check and the error if there was one.
 - Buttons **Check for updates**, **Update system packages** (`apt-get full-upgrade` and
-  `autoremove`) and **Update sendspin-frame** (fetches the newest code into
+  `autoremove`), **Update sendspin-frame** (fetches the newest code into
   `/usr/local/src/sendspin-frame`, runs its `install.sh`, which also upgrades the Python
-  packages, and restarts the service).
+  packages, and restarts the service) and **Update all** (both in one go: the system packages
+  first, then sendspin-frame, which ends with the restart; stops if the system part fails).
 
 Everything about updates on the screen sits in the top-left corner, on a dark background so it
 stays readable on bright photos:
@@ -205,7 +206,7 @@ stays readable on bright photos:
   This one also works without `[mqtt]`.
 - With the system stats on, that line also counts the system packages
   (*Updates: sendspin-frame 3 · system 12*), under the stats.
-- While an update runs (either button), its output live, console-style: the last few lines of
+- While an update runs (any of the update buttons), its output live, console-style: the last few lines of
   apt or install.sh, under the stats. It stays 30 s after a successful update and 5 minutes
   after a failed one (with the error). An *Update sendspin-frame* ends with the service
   restarting, so that one simply disappears.

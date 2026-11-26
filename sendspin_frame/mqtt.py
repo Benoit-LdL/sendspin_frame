@@ -194,6 +194,8 @@ def make_update_entities(updates: Any) -> list[Entity]:
                press=lambda: updates.request_update("system")),
         Entity("update_app", "button", "Update sendspin-frame", "mdi:download",
                press=lambda: updates.request_update("app")),
+        Entity("update_all", "button", "Update all", "mdi:cloud-download",
+               press=lambda: updates.request_update("all")),
     ]
 
 

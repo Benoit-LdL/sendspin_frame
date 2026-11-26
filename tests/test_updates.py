@@ -171,6 +171,27 @@ def test_sendspin_frame_line_does_not_depend_on_the_stats():
     assert m.screen_summary() == "Updates: system 1"
     m.status = "updating_app"
     assert m.screen_notice() == m.screen_summary() == "Updating sendspin-frame…"
+    m.status = "updating_all"
+    assert m.screen_notice() == "Updating sendspin-frame…"
+    assert m.screen_summary() == "Updating system packages and sendspin-frame…"
+
+
+def test_helper_all_runs_system_then_app(monkeypatch):
+    calls = []
+    monkeypatch.setattr(helper.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(helper, "update_system", lambda: calls.append("system"))
+    monkeypatch.setattr(helper, "update_app", lambda: calls.append("app"))
+    assert helper.main(["--detached", "all"]) == 0
+    assert calls == ["system", "app"]  # app last: it restarts the service
+
+    def failing() -> None:
+        calls.append("system")
+        raise helper.subprocess.CalledProcessError(100, ["apt-get"])
+
+    calls.clear()
+    monkeypatch.setattr(helper, "update_system", failing)
+    assert helper.main(["--detached", "all"]) == 100
+    assert calls == ["system"]  # no app update after a failed system update
 
 
 def test_manager_reports_failures_and_ignores_requests_while_busy(tmp_path):
@@ -219,3 +240,5 @@ def test_update_entities_discovery(tmp_path):
     assert by_key["system_updates"].state_payload() is None
     assert by_key["update_status"].state_payload() == "Idle"
     assert not by_key["update_system"].restorable and by_key["update_system"].has_command
+    p = json.loads(b.discovery_payload(by_key["update_all"]))
+    assert p["command_topic"] == "sendspin_frame/tv/update_all/set" and p["name"] == "Update all"
