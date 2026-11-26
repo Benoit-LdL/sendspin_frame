@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 
 Box = tuple[int, int, int, int]
 WHITE = (255, 255, 255)
+# Dark backgrounds behind text that sits on top of photos / covers (badge, popups, corner).
+PILL_ALPHA = 150
+CONSOLE_ALPHA = 190
+# The live view of a running update in the top-left corner: at most this many output lines.
+CONSOLE_MAX_LINES = 8
 
 # --------------------------------------------------------------------------------------- fonts
 
@@ -37,6 +42,7 @@ _FONT_FILES = {
     "medium": ["Inter-Medium", "Inter-Regular", "DejaVuSans"],
     "semibold": ["Inter-SemiBold", "Inter-Bold", "DejaVuSans-Bold"],
     "bold": ["Inter-Bold", "DejaVuSans-Bold"],
+    "mono": ["DejaVuSansMono", "LiberationMono-Regular", "DejaVuSans"],  # update output
 }
 
 
@@ -63,7 +69,8 @@ class Fonts:
     def __init__(self, style: StyleConfig) -> None:
         self._paths: dict[str, str | None] = {}
         for weight, stems in _FONT_FILES.items():
-            override = style.font_bold if weight in ("bold", "semibold") else style.font_regular
+            override = (style.font_bold if weight in ("bold", "semibold")
+                        else None if weight == "mono" else style.font_regular)
             path = override if override and Path(override).exists() else None
             for stem in stems:
                 if path:
@@ -234,7 +241,7 @@ def status_badge(size: int, connected: bool) -> Image.Image:
     ss = 4  # supersampled, then scaled down for smooth edges
     s = size * ss
     badge = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    ImageDraw.Draw(badge).ellipse((0, 0, s - 1, s - 1), fill=(0, 0, 0, 150))
+    ImageDraw.Draw(badge).ellipse((0, 0, s - 1, s - 1), fill=(0, 0, 0, PILL_ALPHA))
     logo = int(s * 0.58)
     mask = _ma_logo_mask().resize((logo, logo), Image.Resampling.LANCZOS)
     pos = ((s - logo) // 2, (s - logo) // 2 - s // 40)  # optically centred (house shape)
@@ -552,30 +559,66 @@ class Renderer:
         x0 = max(W // 2, x1 - int(min(W, H) * 0.4))
         return (x0, by, x1, by1)
 
-    def notice_box(self, below: bool) -> Box:
-        """The area of the update popup: left of the badge, or (`below`, on the photo screen,
-        where the 'now playing' popup is left of the badge) in the row under it."""
-        x0, y0, _, y1 = self.popup_box()
-        x1 = self.badge_box()[2]
-        if below:
-            gap = max(4, (y1 - y0) // 4)
-            y0, y1 = y1 + gap, y1 + gap + (y1 - y0)
-        else:
-            x1 = self.popup_box()[2]
-        return (x0, y0, x1, y1)
+    # ---------------------------------------------------------------------- top-left corner
 
-    def notice_popup(self, region: Image.Image, text: str) -> None:
-        """Draw the update popup into `region` (the screen under `notice_box()`): a dark pill
-        like the 'now playing' popup, right-aligned so it sits next to / under the badge."""
-        h = region.height
-        font = self.fonts.get("medium", h * 0.4)
+    def _corner_metrics(self) -> tuple[int, int, int]:
+        """(margin, row height, gap): rows line up with the badge in the top-right corner."""
+        bx, by, bx1, _ = self.badge_box()
+        h = bx1 - bx
+        return by, h, max(4, h // 4)
+
+    def _console_fonts(self) -> tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, int, int]:
+        """(title font, line font, line height, padding) of the live update view."""
+        k = min(self.size)
+        mono = self.fonts.get("mono", max(10, k * 0.019))
+        title = self.fonts.get("semibold", max(11, k * 0.022))
+        return title, mono, int(mono.size * 1.4), max(6, int(k * 0.014))
+
+    def corner_box(self) -> Box:
+        """The top-left corner: system stats, an updates line and the live update view, under
+        each other. The left half only (the popups are in the right half)."""
+        W, _ = self.size
+        m, h, gap = self._corner_metrics()
+        title, _, line_h, pad = self._console_fonts()
+        console_h = 2 * pad + int(title.size * 1.6) + CONSOLE_MAX_LINES * line_h
+        return (0, 0, W // 2, m + 2 * (h + gap) + console_h + 2)
+
+    def draw_corner(self, region: Image.Image, rows: list[str],
+                    console: tuple[str, str, tuple[str, ...]] | None) -> None:
+        """Draw into `region` (the screen under `corner_box()`): each of `rows` as a dark pill
+        (like the 'now playing' popup), then `console` (state, title, lines) as a dark box with
+        the output of a running update, console-style."""
+        m, h, gap = self._corner_metrics()
+        max_w = region.width - m - gap
+        font = self.fonts.get("medium", h * 0.44)
         pad = int(h * 0.45)
-        text = ellipsize(text, font, region.width - 2 * pad)
-        w = min(region.width, math.ceil(font.getlength(text)) + 2 * pad)
-        x = region.width - w
-        shape = rounded_mask((w, h), h // 2).point(lambda v: v * 150 // 255)
-        region.paste((0, 0, 0), (x, 0), shape)
-        draw_text(region, (x + pad, h / 2), text, font, alpha=0.92, anchor="lm")
+        y = m
+        for text in rows:
+            text = ellipsize(text, font, max_w - 2 * pad)
+            w = min(max_w, math.ceil(font.getlength(text)) + 2 * pad)
+            shape = rounded_mask((w, h), h // 2).point(lambda v: v * PILL_ALPHA // 255)
+            region.paste((0, 0, 0), (m, y), shape)
+            draw_text(region, (m + pad, y + h / 2), text, font, alpha=0.92, anchor="lm")
+            y += h + gap
+        if console is None:
+            return
+        state, title, lines = console
+        lines = lines[-CONSOLE_MAX_LINES:]
+        f_title, f_mono, line_h, cpad = self._console_fonts()
+        title_h = int(f_title.size * 1.6)
+        box_h = min(2 * cpad + title_h + len(lines) * line_h, region.height - y)
+        shape = rounded_mask((max_w, box_h), max(4, h // 4)).point(
+            lambda v: v * CONSOLE_ALPHA // 255)
+        region.paste((0, 0, 0), (m, y), shape)
+        color = {"done": STATUS_OK, "failed": STATUS_ERROR}.get(state, WHITE)
+        inner = max_w - 2 * cpad
+        draw_text(region, (m + cpad, y + cpad + title_h / 2), ellipsize(title, f_title, inner),
+                  f_title, color=color, alpha=0.95, anchor="lm")
+        ty = y + cpad + title_h
+        for line in lines:
+            draw_text(region, (m + cpad, ty + line_h / 2), ellipsize(line, f_mono, inner),
+                      f_mono, alpha=0.8, anchor="lm")
+            ty += line_h
 
     def now_playing_popup(self, bg: Image.Image, text: str, paused: bool, kind: str | None,
                           start: float, fps: float) -> NowPlayingPopup:
@@ -688,7 +731,7 @@ class NowPlayingPopup:
         pill_w = w if self.scrolls else min(w, lead + text_w + pad)
         px = w - pill_w
         self.pill = bg.copy()
-        shape = rounded_mask((pill_w, h), h // 2).point(lambda v: v * 150 // 255)
+        shape = rounded_mask((pill_w, h), h // 2).point(lambda v: v * PILL_ALPHA // 255)
         self.pill.paste((0, 0, 0), (px, 0), shape)
         if kind:
             icon = media_icon(kind, icon_s).point(lambda v: int(v * alpha))

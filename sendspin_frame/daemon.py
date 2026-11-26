@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 ARTWORK_URL_FALLBACK_S = 3.0
 # Forget a pairing code that was never cleared (pairing abandoned), as the screen does.
 PAIRING_TIMEOUT_S = 300
+# Update lines / live view on the screen: at most this often (a running update can print a lot).
+UPDATES_PUSH_S = 0.3
 RUN_RECORD = "sendspin-frame-run.json"
 
 
@@ -64,7 +66,9 @@ class FrameRuntime:
         self._playback = "stopped"
         self._music_screen = cfg.now_playing.screen
         self._show_stats = cfg.display.show_stats
-        self._update_notice: str | None = None
+        self._updates = None  # updates.UpdateManager
+        self._updates_sent: tuple | None = None  # what the screen shows
+        self._updates_push: asyncio.TimerHandle | None = None
         self._photos_url = cfg.photos.url
         self._photo_task: asyncio.Task | None = None
         self._art_received_at = 0.0
@@ -113,7 +117,10 @@ class FrameRuntime:
             updates = UpdateManager(self.cfg.updates,
                                     ["nice", "-n", "10", "sudo", "-n", self.cfg.updates.helper])
             if notice_on_screen:
-                updates.on_change = lambda: self._set_update_notice(updates.screen_notice())
+                self._updates = updates
+                updates.on_change = self._push_updates
+                if self.cfg.updates.show_progress:
+                    updates.on_output = self._push_updates
             self._tasks.append(asyncio.create_task(updates.run(), name="updates"))
         if self.cfg.mqtt.host:
             from .mqtt import (
@@ -271,11 +278,23 @@ class FrameRuntime:
         if self._media.get("pairing_code") == code:
             self._set_media(pairing_code=None)
 
-    def _set_update_notice(self, text: str | None) -> None:
-        """The "update available" popup on the screen (None = no popup)."""
-        if text != self._update_notice:
-            self._update_notice = text
-            self.screen.send("update_notice", text)
+    def _push_updates(self) -> None:
+        """Send the update lines / live view to the screen soon. Coalesced: a running update
+        can print many lines per second, the screen only needs a few redraws."""
+        if self._updates_push is None:
+            self._updates_push = asyncio.get_running_loop().call_later(
+                UPDATES_PUSH_S, self._send_updates)
+
+    def _send_updates(self) -> None:
+        self._updates_push = None
+        u = self._updates
+        if u is None:
+            return
+        console = u.screen_console() if self.cfg.updates.show_progress else None
+        msg = (u.screen_notice(), u.screen_summary(), console)
+        if msg != self._updates_sent:
+            self._updates_sent = msg
+            self.screen.send("updates", *msg)
 
     def _on_photo(self, data: bytes | None, taken_at: float | None, place: str | None) -> None:
         self.screen.send("photo", data, taken_at, place)

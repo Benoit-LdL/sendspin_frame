@@ -42,14 +42,15 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
   through MQTT discovery.
 - **Updates from Home Assistant.** The Pi checks every few hours how many Raspberry Pi OS
   packages and Python packages can be updated, and whether there is a newer sendspin-frame. The
-  counts show up as sensors, and buttons install the updates. A small popup on the screen
-  tells you when there is a newer sendspin-frame.
+  counts show up as sensors, and buttons install the updates. The screen tells you when there
+  is a newer sendspin-frame, and shows the output of a running update live.
 - **What's playing, in Home Assistant.** Track title, artist, album and the Sendspin pairing
   code as sensors, the same ones a Sendspin ESPHome speaker has, so one dashboard card fits both.
 - **Diagnostic sensors in Home Assistant.** CPU temperature, frequency and use, memory, uptime,
   loop time, reset reason, IP and MAC address, WiFi signal: the same figures an ESPHome speaker
   reports, plus a **Restart** button.
-- **Optional system stats.** CPU use, RAM use and CPU temperature in the top-left corner.
+- **Optional system stats.** CPU use, RAM use and CPU temperature in the top-left corner, with
+  the available updates under them.
 - **OLED burn-in protection.** Optionally moves the picture by a few pixels every few minutes.
 - **Optional night mode.** The screen switches off in a time window you choose, and wakes up when
   music starts.
@@ -195,11 +196,20 @@ The same device also gets (switch off with `updates.enabled = false`):
   `/usr/local/src/sendspin-frame`, runs its `install.sh`, which also upgrades the Python
   packages, and restarts the service).
 
-While a newer sendspin-frame is available, the screen shows a small **sendspin-frame update
-available** popup in the top-left corner (under the system stats, when those are on), until
-the update is installed. It only looks at sendspin-frame itself, not at the system or Python
-packages. This popup also works without `[mqtt]`; `updates.show_on_screen = false` switches it
-off.
+Everything about updates on the screen sits in the top-left corner, on a dark background so it
+stays readable on bright photos:
+
+- Without the system stats: **sendspin-frame update available** while there is a newer
+  sendspin-frame, until it's installed. This one also works without `[mqtt]`.
+- With the system stats on: a line under them with every available update, the same counts as
+  the sensors (*Updates: sendspin-frame 3 · system 12*).
+- While an update runs (either button), its output live, console-style: the last few lines of
+  apt or install.sh, under the stats. It stays 30 s after a successful update and 5 minutes
+  after a failed one (with the error). An *Update sendspin-frame* ends with the service
+  restarting, so that one simply disappears.
+
+`updates.show_on_screen = false` switches all of this off; `updates.show_progress = false` only
+the live output.
 
 Checks run shortly after start and then every `updates.check_hours` (default 6). Put the two
 counters on a dashboard, or use them in an automation that sends a notification. For

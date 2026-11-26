@@ -120,8 +120,12 @@ class UpdatesConfig:
     # The buttons run through a root helper installed by install.sh.
     # Without [mqtt] only the popup on the screen is left (see show_on_screen).
     enabled: bool = True
-    # Show a small popup in the top-left corner while a newer sendspin-frame is available.
+    # Updates in the top-left corner of the screen: a line while a newer sendspin-frame is
+    # available (with the system stats on: every available update), plus the live view below.
     show_on_screen: bool = True
+    # While an update runs (buttons in Home Assistant), show its output as it comes, under the
+    # system stats. Needs show_on_screen.
+    show_progress: bool = True
     # Hours between checks (0 = only when the "Check for updates" button is pressed).
     check_hours: float = 6
     # The root helper (installed by install.sh, allowed through /etc/sudoers.d/sendspin-frame).

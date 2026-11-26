@@ -112,6 +112,16 @@ docs/screenshots/            README screenshots
   `/usr/local/src/sendspin-frame`. install.sh now runs `uv pip install --upgrade`, so
   dependencies move within the pyproject constraints (sendspin stays pinned, but its own
   dependencies such as aiosendspin may move). **Not yet tested on the Pi.**
+- Top-left corner reworked (2026-11-26): the top-right update popup is gone; the corner now
+  stacks dark pills (system stats; then `UpdateManager.screen_notice()` without stats, or
+  `screen_summary()` with every update count when the stats are on) and, while an update runs,
+  a console box (`screen_console()`: the helper's output line by line). The helper copies the
+  transient unit's journal (`journalctl _SYSTEMD_UNIT=... --follow --since @<start>`) to its
+  stdout while it waits, so the unit still doesn't depend on sendspin-frame. apt runs with `-q`
+  instead of `-qq` so there's something to show. Screen message `updates` (notice, summary,
+  console), pushed at most every 0.3 s by the daemon. `updates.show_progress` toggles the live
+  view. **Not yet tried on the Pi** (check that the sendspin user's sudo helper can run
+  journalctl, which it does as root).
 - "Now playing" popup next to the badge on the photo screen (`photos.show_now_playing`), with
   an icon (music / radio / podcast / audiobook) and the album / station / show name. Sendspin
   doesn't send the media type, so `ma_api.py` asks Music Assistant's websocket API

@@ -13,7 +13,7 @@ from PIL import Image
 
 from .config import FrameConfig
 from .display import Display
-from .renderer import Box, NowPlayingPopup, Renderer, Scene, draw_text
+from .renderer import Box, NowPlayingPopup, Renderer, Scene
 from .state import MediaInfo, SharedState, Snapshot, Track
 from .sysstats import StatsReader
 
@@ -112,16 +112,14 @@ class Engine(threading.Thread):
         self._np_art_serial = -1
         self._pending_key = None
         self._pending_since = 0.0
-        # Update popup, next to the status badge (top-right).
-        self._notice: str | None = None
-        self._notice_bg: Image.Image | None = None  # the area without the popup
-        self._notice_at: Box | None = None  # where it is on the current scene
-        # Top-left corner overlay: the system stats.
+        # Top-left corner overlay: system stats, updates line, live view of a running update.
         self._stats = StatsReader()
         self._stats_text = ""
         self._stats_on = False
-        self._stats_bg: Image.Image | None = None  # the corner without the overlay
         self._stats_next = 0.0
+        self._corner: tuple = (None, None, None)  # (stats, updates line, console) shown
+        self._corner_bg: Image.Image | None = None  # the corner without the overlay
+        self._corner_dirty = False  # content changed since the corner was last drawn
         # "Now playing" popup next to the status badge, on the photo screen during music.
         self._popup_want: tuple[str, bool, str] | None = None  # (text, paused, kind)
         self._popup_start = 0.0  # when the current text first showed (scroll position)
@@ -243,49 +241,42 @@ class Engine(threading.Thread):
             self._shown.paste(region, (box[0] + dx, box[1] + dy))
         self.display.show(self._shown, (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy))
 
-    # ------------------------------------------------------------------ stats overlay
+    # ------------------------------------------------------------------ top-left corner
 
-    def _stats_box(self) -> Box:
-        """Room for the stats line."""
-        W, H = self.display.width, self.display.height
-        k = min(W, H)
-        return (0, 0, int(W * 0.5), int(k * 0.03) + int(k * 0.026 * 1.6))
-
-    def _draw_stats(self, region: Image.Image) -> None:
-        k = min(self.display.width, self.display.height)
-        font = self.renderer.fonts.get("medium", k * 0.026)
-        m = int(k * 0.03)
-        draw_text(region, (m, m), self._stats_text, font, alpha=0.85, anchor="lt", shadow=0.7)
-
-    def _update_stats(self, snap: Snapshot, now: float) -> None:
-        """Switch the stats on / off; refresh the numbers every few seconds."""
+    def _refresh_corner(self, snap: Snapshot, now: float) -> None:
+        """Work out what the corner shows (stats every few seconds); mark it for a redraw when
+        that changed."""
         want = snap.show_stats
-        if want == self._stats_on and (not want or now < self._stats_next):
-            return
-        self._stats_on = want
-        if self._frame is None or self._stats_bg is None:
-            return
-        region = self._stats_bg.copy()
-        if want:
+        if want and (not self._stats_on or now >= self._stats_next):
             self._stats_text = self._stats.read().text()
             self._stats_next = now + STATS_INTERVAL_S
-            self._draw_stats(region)
-        self._paste(region, self._stats_box())
+        self._stats_on = want
+        console = snap.update_console
+        if console is not None:
+            line = None  # the live view has its own title
+        elif want:
+            line = snap.update_summary  # with the stats: every available update
+        else:
+            line = snap.update_notice  # only "sendspin-frame update available"
+        content = (self._stats_text if want else None, line, console)
+        if content != self._corner:
+            self._corner = content
+            self._corner_dirty = True
 
-    # ------------------------------------------------------------------ update popup
+    def _corner_region(self) -> Image.Image:
+        """The corner of the current scene, with the overlay on it."""
+        assert self._corner_bg is not None
+        region = self._corner_bg.copy()
+        if self._scene is not None and self._scene.key[0] != "blank":
+            stats, line, console = self._corner
+            self.renderer.draw_corner(region, [r for r in (stats, line) if r], console)
+        return region
 
-    def _update_notice(self, snap: Snapshot) -> None:
-        """Show / hide / change the update popup."""
-        notice = snap.update_notice
-        if notice == self._notice:
+    def _update_corner(self) -> None:
+        if not self._corner_dirty or self._frame is None or self._corner_bg is None:
             return
-        self._notice = notice
-        if self._notice_bg is None or self._notice_at is None:
-            return
-        region = self._notice_bg.copy()
-        if notice and self._scene is not None and self._scene.key[0] != "blank":
-            self.renderer.notice_popup(region, notice)
-        self._paste(region, self._notice_at)
+        self._corner_dirty = False
+        self._paste(self._corner_region(), self.renderer.corner_box())
 
     # ------------------------------------------------------------------ now playing popup
 
@@ -350,22 +341,11 @@ class Engine(threading.Thread):
 
     def _present(self, scene: Scene, now: float, animate: bool) -> None:
         frame = scene.frame(now)
-        box = self._stats_box()
-        self._stats_bg = frame.crop(box)
-        if self._stats_on and scene.key[0] != "blank":
-            if not self._stats_text:
-                self._stats_text = self._stats.read().text()
-            region = self._stats_bg.copy()
-            self._draw_stats(region)
-            frame.paste(region, box[:2])
-        # On the photo screen the "now playing" popup is left of the badge: go under it.
-        nbox = self.renderer.notice_box(below=scene.key[0] == "photo")
-        self._notice_at, self._notice_bg = nbox, frame.crop(nbox)
-        if self._notice and scene.key[0] != "blank":
-            region = self._notice_bg.copy()
-            self.renderer.notice_popup(region, self._notice)
-            frame.paste(region, nbox[:2])
         self._scene = scene
+        box = self.renderer.corner_box()
+        self._corner_bg = frame.crop(box)
+        frame.paste(self._corner_region(), box[:2])
+        self._corner_dirty = False
         pbox = self.renderer.popup_box()
         self._popup_bg = frame.crop(pbox)
         self._make_popup(now)
@@ -413,6 +393,7 @@ class Engine(threading.Thread):
             self._shown = self._frame
             self._scene = None
         self._update_pixel_shift()
+        self._refresh_corner(snap, now)
 
         want = self._popup_content(mode, snap, now)
         if want is not None and (self._popup_want is None or want[0] != self._popup_want[0]):
@@ -438,8 +419,7 @@ class Engine(threading.Thread):
                 if result is not None:
                     self._paste(*result)
                 self._dyn_key = dkey
-        self._update_stats(snap, now)
-        self._update_notice(snap)
+        self._update_corner()
         self._update_popup(now)
         wake = 1.0
         if self._stats_on:

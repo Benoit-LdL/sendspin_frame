@@ -101,6 +101,10 @@ def _fake_helper(tmp_path, report: dict, fail_action: str | None = None) -> list
             print("boom", file=sys.stderr); sys.exit(3)
         if action == "check":
             print({json.dumps(report)!r})
+        else:
+            print("==> apt-get update", flush=True)
+            print("Get:1 http://deb\\r\\nUnpacking libc6 (2) over (1) ...", flush=True)
+            print("Setting up libc6 (2) ...")
         """))
     return [sys.executable, "-I", str(script)]
 
@@ -118,8 +122,10 @@ def test_manager_check_and_update(tmp_path):
         "errors": ["python: uv not found"],
     }
     changes = []
+    outputs = []
     m = UpdateManager(UpdatesConfig(), _fake_helper(tmp_path, report),
-                      on_change=lambda: changes.append(m.status))
+                      on_change=lambda: changes.append(m.status),
+                      on_output=lambda: outputs.append(m.screen_console()))
 
     async def go():
         assert m.system_count() is None  # unknown before the first check
@@ -135,9 +141,17 @@ def test_manager_check_and_update(tmp_path):
         assert m.status_attributes()["check_errors"] == ["python: uv not found"]
         assert m.status_attributes()["last_check"].endswith("+00:00")
         assert changes == ["checking", "idle"]
+        assert m.screen_summary() == "Updates: sendspin-frame 2  ·  system 1"
+        assert m.screen_console() is None
         assert await m.update("system")
         assert _actions(tmp_path) == ["check", "system", "check"]
         assert changes[2:] == ["updating_system", "idle", "checking", "idle"]
+        # The output came line by line, and stays on screen for a while after the end.
+        assert outputs[0] == ("running", "Updating system packages…", ())
+        assert m.screen_console() == ("done", "System packages updated", (
+            "==> apt-get update", "Get:1 http://deb", "Unpacking libc6 (2) over (1) ...", "Setting up libc6 (2) ..."))
+        m._console_hide()
+        assert m.screen_console() is None
 
     asyncio.run(go())
 
@@ -148,6 +162,8 @@ def test_manager_reports_failures_and_ignores_requests_while_busy(tmp_path):
     async def go():
         assert not await m.update("app")
         assert m.status_text() == "Failed" and "boom" in m.error
+        state, title, lines = m.screen_console()
+        assert (state, title) == ("failed", "sendspin-frame update failed") and "boom" in lines[-1]
         assert _actions(tmp_path) == ["app"]  # no re-check after a failure
         # Buttons do nothing while an action runs.
         task = asyncio.ensure_future(m.update("system"))

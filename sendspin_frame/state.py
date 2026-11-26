@@ -66,7 +66,10 @@ class Snapshot:
     photo: Photo | None
     music_screen: str  # "cover" | "photos": what to show while music plays
     show_stats: bool  # CPU / RAM / temperature overlay
-    update_notice: str | None  # "update available" popup in the top-left corner
+    # Top-left corner, see UpdateManager.screen_notice / screen_summary / screen_console.
+    update_notice: str | None  # without the stats: "sendspin-frame update available"
+    update_summary: str | None  # with the stats: every available update
+    update_console: tuple[str, str, tuple[str, ...]] | None  # running update: state, title, lines
     pairing_code: str | None  # shown full screen while Music Assistant pairs with us
     pairing_since: float
     media: MediaInfo | None  # from the Music Assistant API, None = not known
@@ -83,7 +86,7 @@ class SharedState:
             connected=False, server_name=None, playback="stopped",
             playback_since=time.monotonic(), track=None, artwork=None,
             artwork_serial=0, photo=None, music_screen="cover", show_stats=False,
-            update_notice=None,
+            update_notice=None, update_summary=None, update_console=None,
             pairing_code=None, pairing_since=0.0, media=None, version=0,
         )
 
@@ -124,8 +127,9 @@ class SharedState:
     def set_show_stats(self, show: bool) -> None:
         self._update(show_stats=show)
 
-    def set_update_notice(self, text: str | None) -> None:
-        self._update(update_notice=text)
+    def set_updates(self, notice: str | None, summary: str | None = None,
+                    console: tuple[str, str, tuple[str, ...]] | None = None) -> None:
+        self._update(update_notice=notice, update_summary=summary, update_console=console)
 
     def set_media(self, media: MediaInfo | None) -> None:
         self._update(media=media)

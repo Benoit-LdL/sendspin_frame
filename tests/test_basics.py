@@ -369,13 +369,13 @@ def test_loop_timer_reports_the_worst_delay():
     assert asyncio.run(blocked()) >= 50
 
 
-def test_stats_overlay_toggles_on_and_off():
+def _capture_engine(size=(640, 360)):
     from sendspin_frame.config import FrameConfig
     from sendspin_frame.display import Display
     from sendspin_frame.engine import Engine
 
     class Capture(Display):
-        width, height = 640, 360
+        width, height = size
 
         def __init__(self):
             self.boxes = []
@@ -387,64 +387,75 @@ def test_stats_overlay_toggles_on_and_off():
     cfg.display.transition_ms = 0
     disp = Capture()
     state = SharedState()
-    engine = Engine(cfg, state, disp)
+    return Engine(cfg, state, disp), state, disp
+
+
+def test_stats_overlay_toggles_on_and_off():
+    engine, state, disp = _capture_engine()
     engine._tick()  # idle clock screen
-    before = engine._frame.crop(engine._stats_box())
+    box = engine.renderer.corner_box()
+    before = engine._frame.crop(box)
     state.set_show_stats(True)
     engine._tick()
-    with_stats = engine._frame.crop(engine._stats_box())
-    assert disp.boxes[-1] == engine._stats_box()  # only the corner was redrawn
+    with_stats = engine._frame.crop(box)
+    assert disp.boxes[-1] == box  # only the corner was redrawn
     assert before.tobytes() != with_stats.tobytes()
     state.set_show_stats(False)
     engine._tick()
-    assert engine._frame.crop(engine._stats_box()).tobytes() == before.tobytes()
+    assert engine._frame.crop(box).tobytes() == before.tobytes()
 
 
-def test_update_notice_shows_and_hides():
-    from sendspin_frame.config import FrameConfig
-    from sendspin_frame.display import Display
-    from sendspin_frame.engine import Engine
-
-    class Capture(Display):
-        width, height = 640, 360
-
-        def __init__(self):
-            self.boxes = []
-
-        def show(self, img, box=None, fast=False):
-            self.boxes.append(box)
-
-    cfg = FrameConfig()
-    cfg.display.transition_ms = 0
-    disp = Capture()
-    state = SharedState()
-    engine = Engine(cfg, state, disp)
+def test_corner_update_lines_and_live_view():
+    engine, state, disp = _capture_engine()
     engine._tick()
-    box = engine.renderer.notice_box(below=False)  # next to the badge (clock screen)
-    before = engine._frame.crop(box)
-    state.set_update_notice("sendspin-frame update available")
+    r = engine.renderer
+    box = r.corner_box()
+    assert box[2] <= r.popup_box()[0]  # left half: never under the popups or the badge
+    clean = engine._corner_bg.tobytes()
+    # Without the stats: only the sendspin-frame notice.
+    state.set_updates("sendspin-frame update available", "Updates: sendspin-frame 2  ·  system 5")
     engine._tick()
+    assert engine._corner == (None, "sendspin-frame update available", None)
+    assert disp.boxes[-1] == box and engine._frame.crop(box).tobytes() != clean
+    # With the stats: every available update, under them.
+    state.set_show_stats(True)
+    engine._tick()
+    stats, line, console = engine._corner
+    assert stats and line == "Updates: sendspin-frame 2  ·  system 5" and console is None
+    # A running update: the live view replaces the line, the stats stay.
+    lines = tuple(f"Unpacking package-{i} ..." for i in range(20))
+    state.set_updates(None, "Updating system packages…",
+                      ("running", "Updating system packages…", lines))
+    engine._tick()
+    assert engine._corner[0] == stats and engine._corner[1] is None
     shown = engine._frame.crop(box)
-    assert disp.boxes[-1] == box and shown.tobytes() != before.tobytes()
-    state.set_show_stats(True)  # the stats line doesn't move the popup
-    engine._tick()
-    assert engine._frame.crop(box).tobytes() == shown.tobytes()
-    state.set_show_stats(False)
-    engine._tick()
-    state.set_connection(True, "MA")  # a new scene keeps the popup
+    # A new scene keeps the corner.
+    state.set_connection(True, "MA")
     engine._tick()
     time.sleep(0.3)  # the engine waits a moment before it builds a new scene
     engine._tick()
     assert engine._scene.key[1] is True
-    assert engine._frame.crop(box).tobytes() != engine._notice_bg.tobytes()
-    state.set_update_notice(None)
+    assert engine._frame.crop(box).tobytes() != engine._corner_bg.tobytes()
+    state.set_show_stats(False)
+    state.set_updates(None)
     engine._tick()
-    assert engine._frame.crop(box).tobytes() == engine._notice_bg.tobytes()
-    # On the photo screen the "now playing" popup is next to the badge: go under it.
-    r = engine.renderer
-    assert r.notice_box(below=True)[1] > r.badge_box()[3]
-    nb, pb = r.notice_box(below=False), r.popup_box()
-    assert nb[2] <= r.badge_box()[0] and nb[0] >= pb[0]
+    assert engine._frame.crop(box).tobytes() == engine._corner_bg.tobytes()
+    assert shown.size == (box[2], box[3])
+
+
+def test_corner_fits_portrait_and_small_screens():
+    from sendspin_frame.config import FrameConfig
+    from sendspin_frame.renderer import CONSOLE_MAX_LINES, Renderer
+
+    for size in ((320, 240), (1080, 1920), (3840, 2160)):
+        r = Renderer(FrameConfig(), size)
+        box = r.corner_box()
+        assert box[3] <= size[1]
+        region = Image.new("RGB", box[2:], (200, 200, 200))
+        r.draw_corner(region, ["CPU 12%  RAM 40%  48°C", "Updates: system 3"],
+                      ("failed", "System package update failed",
+                       tuple("x" * 300 for _ in range(CONSOLE_MAX_LINES + 3))))
+        assert region.getpixel((box[2] - 1, box[3] - 1)) == (200, 200, 200)
 
 
 def test_photo_status_badge_follows_connection():

@@ -18,7 +18,9 @@ Actions:
 `system` and `app` run detached, as a transient systemd unit (sendspin-frame-update.service),
 so they survive the restart of sendspin-frame that an update brings, and so stopping
 sendspin-frame can never interrupt dpkg half-way. The unit name doubles as a lock: a second
-update can't start while one runs. `check` runs in the foreground and prints the report.
+update can't start while one runs. While it runs, the unit's output (from the journal) is
+copied to our stdout, line by line, for the live view on the screen. `check` runs in the
+foreground and prints the report.
 
 /etc/sendspin-frame/update.conf (written by install.sh) tells where the code came from:
     ORIGIN=https://github.com/.../sendspin_frame.git
@@ -34,6 +36,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from importlib.metadata import PackageNotFoundError, requires
 from pathlib import Path
 from typing import Any
@@ -203,13 +206,15 @@ def check() -> dict[str, Any]:
 
 def update_system() -> None:
     lock = f"-oDPkg::Lock::Timeout={APT_LOCK_WAIT_S}"
+    # -q (not -qq): no progress bars, but the "Get / Unpacking / Setting up" lines stay, for
+    # the live view on the screen.
     log("==> apt-get update")
-    run(["apt-get", "-qq", lock, "update"])
+    run(["apt-get", "-q", lock, "update"])
     log("==> apt-get full-upgrade")
-    run(["apt-get", "-y", "-qq", lock, "-o", "Dpkg::Options::=--force-confdef",
+    run(["apt-get", "-y", "-q", lock, "-o", "Dpkg::Options::=--force-confdef",
          "-o", "Dpkg::Options::=--force-confold", "full-upgrade"])
     log("==> apt-get autoremove")
-    run(["apt-get", "-y", "-qq", lock, "autoremove"])
+    run(["apt-get", "-y", "-q", lock, "autoremove"])
     if REBOOT_REQUIRED.exists():
         log("A reboot is required to finish this update.")
 
@@ -239,15 +244,40 @@ def _unit_active() -> bool:
     return proc.returncode == 0
 
 
+def follow_journal(since: float) -> subprocess.Popen | None:
+    """Copy the update unit's output since `since` (time.time()) to our stdout as it comes.
+
+    Taken from the journal rather than piped, so the unit doesn't depend on us: when
+    sendspin-frame restarts during an "app" update, this process dies but the update goes on.
+    """
+    if not shutil.which("journalctl"):
+        return None
+    cmd = ["journalctl", f"_SYSTEMD_UNIT={UNIT}.service", "--follow", "--no-tail", "--quiet",
+           "--no-pager", "--output", "cat", "--since", f"@{since:.6f}"]
+    try:
+        return subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return None
+
+
 def run_detached(action: str) -> int:
-    """Run `action` as a transient systemd unit and wait for it; its output goes to the journal."""
+    """Run `action` as a transient systemd unit and wait for it; its output goes to the journal
+    (and, while we wait, to our stdout)."""
     if not shutil.which("systemd-run"):
         print("systemd-run not found: updates need systemd", file=sys.stderr)
         return 1
     cmd = ["systemd-run", "--unit", UNIT, "--description", f"sendspin-frame update ({action})",
            "--wait", "--collect", "--quiet", "--property=Type=exec", "--property=Nice=10",
+           "--setenv=PYTHONUNBUFFERED=1",
            "--", sys.executable, "-I", "-m", "sendspin_frame.update_helper", "--detached", action]
-    proc = subprocess.run(cmd, check=False)
+    follower = follow_journal(time.time())
+    try:
+        proc = subprocess.run(cmd, check=False)
+    finally:
+        if follower is not None:
+            time.sleep(1.0)  # let the last lines reach the journal and us
+            follower.terminate()
+            follower.wait()
     if proc.returncode:
         print(f"update '{action}' failed (exit {proc.returncode}); see "
               f"journalctl -u {UNIT}", file=sys.stderr)
