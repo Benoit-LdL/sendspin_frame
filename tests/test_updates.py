@@ -131,7 +131,8 @@ def test_manager_check_and_update(tmp_path):
         assert m.system_count() is None  # unknown before the first check
         assert m.screen_notice() is None
         assert await m.check()
-        assert m.screen_notice() == "sendspin-frame update available"  # 2 commits behind
+        # Newer code + 1 Python package: shown with and without the system stats.
+        assert m.screen_notice() == "Updates: sendspin-frame 2"
         assert m.system_count() == 1 and m.app_count() == 2
         assert m.system_attributes()["packages"] == ["libc6 1 -> 2"]
         attrs = m.app_attributes()
@@ -154,6 +155,22 @@ def test_manager_check_and_update(tmp_path):
         assert m.screen_console() is None
 
     asyncio.run(go())
+
+
+def test_sendspin_frame_line_does_not_depend_on_the_stats():
+    m = UpdateManager(UpdatesConfig(), ["true"])
+    # Only Python packages behind (no new commit): still a sendspin-frame update.
+    m.report = Report.from_dict({"system": {"packages": [{"name": "a"}]},
+                                 "python": {"packages": [{"name": "pillow"}]},
+                                 "app": {"behind": 0}})
+    assert m.screen_notice() == "Updates: sendspin-frame 1"
+    assert m.screen_summary() == "Updates: sendspin-frame 1  ·  system 1"
+    m.report = Report.from_dict({"system": {"packages": [{"name": "a"}]},
+                                 "python": {"packages": []}, "app": {"behind": 0}})
+    assert m.screen_notice() is None  # system packages only show with the stats
+    assert m.screen_summary() == "Updates: system 1"
+    m.status = "updating_app"
+    assert m.screen_notice() == m.screen_summary() == "Updating sendspin-frame…"
 
 
 def test_manager_reports_failures_and_ignores_requests_while_busy(tmp_path):

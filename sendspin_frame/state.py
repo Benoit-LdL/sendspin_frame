@@ -67,7 +67,7 @@ class Snapshot:
     music_screen: str  # "cover" | "photos": what to show while music plays
     show_stats: bool  # CPU / RAM / temperature overlay
     # Top-left corner, see UpdateManager.screen_notice / screen_summary / screen_console.
-    update_notice: str | None  # without the stats: "sendspin-frame update available"
+    update_notice: str | None  # without the stats: only sendspin-frame's updates
     update_summary: str | None  # with the stats: every available update
     update_console: tuple[str, str, tuple[str, ...]] | None  # running update: state, title, lines
     pairing_code: str | None  # shown full screen while Music Assistant pairs with us

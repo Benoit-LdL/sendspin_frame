@@ -200,10 +200,11 @@ The same device also gets (switch off with `updates.enabled = false`):
 Everything about updates on the screen sits in the top-left corner, on a dark background so it
 stays readable on bright photos:
 
-- Without the system stats: **sendspin-frame update available** while there is a newer
-  sendspin-frame, until it's installed. This one also works without `[mqtt]`.
-- With the system stats on: a line under them with every available update, the same counts as
-  the sensors (*Updates: sendspin-frame 3 · system 12*).
+- Whenever sendspin-frame has updates (new commits or newer Python packages, the same count as
+  the sensor), a line says so (*Updates: sendspin-frame 3*), with or without the system stats.
+  This one also works without `[mqtt]`.
+- With the system stats on, that line also counts the system packages
+  (*Updates: sendspin-frame 3 · system 12*), under the stats.
 - While an update runs (either button), its output live, console-style: the last few lines of
   apt or install.sh, under the stats. It stays 30 s after a successful update and 5 minutes
   after a failed one (with the error). An *Update sendspin-frame* ends with the service

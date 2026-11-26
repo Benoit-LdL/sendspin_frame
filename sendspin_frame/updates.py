@@ -154,18 +154,16 @@ class UpdateManager:
         }
 
     def screen_notice(self) -> str | None:
-        """The line on the screen without the system stats: only about sendspin-frame itself."""
-        if self.status == "updating_app":
-            return "Updating sendspin-frame…"
-        if self.report is not None and self.report.app_behind > 0:
-            return "sendspin-frame update available"
-        return None
+        """The updates line without the system stats: only sendspin-frame (None = up to date).
+        The same sendspin-frame part as `screen_summary`, so the stats toggle never hides it."""
+        return self.screen_summary(include_system=False)
 
-    def screen_summary(self) -> str | None:
-        """The line under the system stats: every update that is available (None = none)."""
+    def screen_summary(self, include_system: bool = True) -> str | None:
+        """The updates line under the system stats: every update that is available (None =
+        none), or with `include_system` False only sendspin-frame."""
         if self.status == "updating_app":
             return "Updating sendspin-frame…"
-        if self.status == "updating_system":
+        if self.status == "updating_system" and include_system:
             return "Updating system packages…"
         r = self.report
         if r is None:
@@ -174,7 +172,7 @@ class UpdateManager:
         parts = []
         if r.app_count:
             parts.append(f"sendspin-frame {r.app_count}")
-        if r.system_count:
+        if include_system and r.system_count:
             parts.append(f"system {r.system_count}")
         return "Updates: " + "  ·  ".join(parts) if parts else None
 

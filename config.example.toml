@@ -104,9 +104,9 @@ stats_interval = 30
 # upgrades the Python packages, and restarts). The buttons run through a small root helper
 # that install.sh installs with a sudoers rule (/etc/sudoers.d/sendspin-frame).
 enabled = true
-# Show updates in the top-left corner of the screen: "sendspin-frame update available" while
-# there is a newer sendspin-frame (this one also works without [mqtt]); with the system stats
-# on, every available update ("Updates: sendspin-frame 3 · system 12") under them.
+# Show updates in the top-left corner of the screen: "Updates: sendspin-frame 3" whenever
+# sendspin-frame has updates, with or without the system stats (this one also works without
+# [mqtt]); with the system stats on, the system packages too ("... · system 12").
 show_on_screen = true
 # While an update runs (the buttons in Home Assistant), show its output live, console-style,
 # in the top-left corner (under the system stats when they're on).

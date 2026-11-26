@@ -257,7 +257,7 @@ class Engine(threading.Thread):
         elif want:
             line = snap.update_summary  # with the stats: every available update
         else:
-            line = snap.update_notice  # only "sendspin-frame update available"
+            line = snap.update_notice  # only sendspin-frame's updates
         content = (self._stats_items if want else None, line, console)
         if content != self._corner:
             self._corner = content

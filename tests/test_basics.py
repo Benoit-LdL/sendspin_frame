@@ -423,9 +423,9 @@ def test_corner_update_lines_and_live_view():
     assert box[2] <= r.popup_box()[0]  # left half: never under the popups or the badge
     clean = engine._corner_bg.tobytes()
     # Without the stats: only the sendspin-frame notice.
-    state.set_updates("sendspin-frame update available", "Updates: sendspin-frame 2  ·  system 5")
+    state.set_updates("Updates: sendspin-frame 2", "Updates: sendspin-frame 2  ·  system 5")
     engine._tick()
-    assert engine._corner == (None, "sendspin-frame update available", None)
+    assert engine._corner == (None, "Updates: sendspin-frame 2", None)
     assert disp.boxes[-1] == box and engine._frame.crop(box).tobytes() != clean
     # With the stats: every available update, under them.
     state.set_show_stats(True)
