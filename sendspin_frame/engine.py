@@ -114,7 +114,7 @@ class Engine(threading.Thread):
         self._pending_since = 0.0
         # Top-left corner overlay: system stats, updates line, live view of a running update.
         self._stats = StatsReader()
-        self._stats_text = ""
+        self._stats_items: tuple[tuple[str, str], ...] = ()  # (icon, value)
         self._stats_on = False
         self._stats_next = 0.0
         self._corner: tuple = (None, None, None)  # (stats, updates line, console) shown
@@ -248,7 +248,7 @@ class Engine(threading.Thread):
         that changed."""
         want = snap.show_stats
         if want and (not self._stats_on or now >= self._stats_next):
-            self._stats_text = self._stats.read().text()
+            self._stats_items = self._stats.read().items()
             self._stats_next = now + STATS_INTERVAL_S
         self._stats_on = want
         console = snap.update_console
@@ -258,7 +258,7 @@ class Engine(threading.Thread):
             line = snap.update_summary  # with the stats: every available update
         else:
             line = snap.update_notice  # only "sendspin-frame update available"
-        content = (self._stats_text if want else None, line, console)
+        content = (self._stats_items if want else None, line, console)
         if content != self._corner:
             self._corner = content
             self._corner_dirty = True
@@ -269,7 +269,7 @@ class Engine(threading.Thread):
         region = self._corner_bg.copy()
         if self._scene is not None and self._scene.key[0] != "blank":
             stats, line, console = self._corner
-            self.renderer.draw_corner(region, [r for r in (stats, line) if r], console)
+            self.renderer.draw_corner(region, stats, [line] if line else [], console)
         return region
 
     def _update_corner(self) -> None:

@@ -207,7 +207,17 @@ def test_sysstats_reads_proc(tmp_path):
     stat.write_text("cpu  150 0 150 900 0 0 0 0 0 0\n")  # 100 busy of 200 ticks
     s = r.read()
     assert (round(s.cpu_pct), round(s.ram_pct), round(s.temp_c)) == (50, 25, 52)
-    assert s.text() == "CPU 50%   RAM 25%   52°C"
+    assert s.items() == (("cpu", "50%"), ("ram", "25%"), ("temp", "52°C"))
+    # On WiFi (the default route's interface is in /proc/net/wireless): the quality too.
+    (tmp_path / "proc" / "net").mkdir()
+    (tmp_path / "proc" / "net" / "route").write_text(
+        "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\n"
+        "wlan0\t00000000\t0102A8C0\t0003\t0\t0\t600\t00000000\n")
+    (tmp_path / "proc" / "net" / "wireless").write_text(
+        "Inter-| sta-|   Quality        |   Discarded packets\n"
+        " face | tus | link level noise |  nwid  crypt   frag\n"
+        " wlan0: 0000   51.  -59.  -256        0      0      0\n")
+    assert r.read().items()[-2:] == (("temp", "52°C"), ("wifi", "82%"))
 
 
 def test_sysstats_details_and_mqtt_sensors(tmp_path):
@@ -452,7 +462,8 @@ def test_corner_fits_portrait_and_small_screens():
         box = r.corner_box()
         assert box[3] <= size[1]
         region = Image.new("RGB", box[2:], (200, 200, 200))
-        r.draw_corner(region, ["CPU 12%  RAM 40%  48°C", "Updates: system 3"],
+        r.draw_corner(region, (("cpu", "12%"), ("ram", "40%"), ("temp", "48°C"), ("wifi", "70%")),
+                      ["Updates: system 3"],
                       ("failed", "System package update failed",
                        tuple("x" * 300 for _ in range(CONSOLE_MAX_LINES + 3))))
         assert region.getpixel((box[2] - 1, box[3] - 1)) == (200, 200, 200)

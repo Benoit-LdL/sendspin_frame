@@ -49,8 +49,8 @@ Portrait screens get a stacked layout ([screenshot](docs/screenshots/now-playing
 - **Diagnostic sensors in Home Assistant.** CPU temperature, frequency and use, memory, uptime,
   loop time, reset reason, IP and MAC address, WiFi signal: the same figures an ESPHome speaker
   reports, plus a **Restart** button.
-- **Optional system stats.** CPU use, RAM use and CPU temperature in the top-left corner, with
-  the available updates under them.
+- **Optional system stats.** CPU use, RAM use, CPU temperature and WiFi quality in the
+  top-left corner, with the available updates under them.
 - **OLED burn-in protection.** Optionally moves the picture by a few pixels every few minutes.
 - **Optional night mode.** The screen switches off in a time window you choose, and wakes up when
   music starts.
@@ -148,7 +148,8 @@ password = "..."
 After a restart, a device named after the player shows up under **Settings → Devices &
 services → MQTT**, with:
 - **Screen during music**: *Cover art* or *Photo slideshow*.
-- **System stats on screen**: CPU use, RAM use and CPU temperature in the top-left corner.
+- **System stats on screen**: CPU use, RAM use, CPU temperature and WiFi quality (left out on a
+  wired connection) in the top-left corner.
 - **Photo Frames URL** (under *Configuration*): the slideshow's public Photo Frames link. A new
   URL takes effect straight away, no restart needed; clear it to turn the slideshow off.
 

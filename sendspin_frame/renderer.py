@@ -286,6 +286,47 @@ def media_icon(kind: str, size: int) -> Image.Image:
     return mask.resize((size, size), Image.Resampling.LANCZOS)
 
 
+@functools.cache
+def stat_icon(kind: str, size: int) -> Image.Image:
+    """A small white-on-transparent glyph (as an "L" mask) for the system stats: cpu (chip),
+    ram (memory module), temp (thermometer), wifi."""
+    ss = 4  # drawn big, then scaled down for smooth edges
+    s = size * ss
+    mask = Image.new("L", (s, s), 0)
+    d = ImageDraw.Draw(mask)
+
+    def p(*xy: float) -> list[float]:
+        return [v * s for v in xy]
+
+    lw = max(1, int(s * 0.09))
+    if kind == "cpu":
+        d.rounded_rectangle(p(0.2, 0.2, 0.8, 0.8), radius=s * 0.08, outline=255, width=lw)
+        d.rectangle(p(0.38, 0.38, 0.62, 0.62), fill=255)
+        for t in (0.34, 0.5, 0.66):  # pins on every side
+            d.line(p(t, 0.04, t, 0.2), fill=255, width=lw)
+            d.line(p(t, 0.8, t, 0.96), fill=255, width=lw)
+            d.line(p(0.04, t, 0.2, t), fill=255, width=lw)
+            d.line(p(0.8, t, 0.96, t), fill=255, width=lw)
+    elif kind == "ram":
+        d.rounded_rectangle(p(0.04, 0.24, 0.96, 0.7), radius=s * 0.06, outline=255, width=lw)
+        for x in (0.16, 0.4, 0.64):  # memory chips
+            d.rectangle(p(x, 0.36, x + 0.2, 0.58), fill=255)
+        for x in (0.14, 0.3, 0.46, 0.62, 0.78):  # contacts
+            d.line(p(x + 0.04, 0.7, x + 0.04, 0.86), fill=255, width=lw)
+    elif kind == "temp":
+        d.rounded_rectangle(p(0.38, 0.04, 0.62, 0.68), radius=s * 0.12, outline=255, width=lw)
+        d.ellipse(p(0.26, 0.6, 0.74, 0.96), fill=255)  # bulb
+        d.line(p(0.5, 0.3, 0.5, 0.7), fill=255, width=lw)  # mercury
+        for y in (0.2, 0.34, 0.48):  # scale
+            d.line(p(0.68, y, 0.82, y), fill=255, width=max(1, lw // 2))
+    else:  # wifi: a dot and three arcs
+        d.ellipse(p(0.41, 0.74, 0.59, 0.92), fill=255)
+        for r in (0.24, 0.42, 0.6):
+            d.arc(p(0.5 - r, 0.83 - r, 0.5 + r, 0.83 + r), start=225, end=315, fill=255,
+                  width=lw)
+    return mask.resize((size, size), Image.Resampling.LANCZOS)
+
+
 def fmt_time(ms: int) -> str:
     s = max(0, int(ms // 1000))
     h, rem = divmod(s, 3600)
@@ -583,16 +624,36 @@ class Renderer:
         console_h = 2 * pad + int(title.size * 1.6) + CONSOLE_MAX_LINES * line_h
         return (0, 0, W // 2, m + 2 * (h + gap) + console_h + 2)
 
-    def draw_corner(self, region: Image.Image, rows: list[str],
-                    console: tuple[str, str, tuple[str, ...]] | None) -> None:
-        """Draw into `region` (the screen under `corner_box()`): each of `rows` as a dark pill
-        (like the 'now playing' popup), then `console` (state, title, lines) as a dark box with
-        the output of a running update, console-style."""
+    def draw_corner(self, region: Image.Image, stats: tuple[tuple[str, str], ...] | None,
+                    rows: list[str], console: tuple[str, str, tuple[str, ...]] | None) -> None:
+        """Draw into `region` (the screen under `corner_box()`): `stats` ((icon, value) pairs,
+        see `stat_icon`) and each of `rows` as a dark pill (like the 'now playing' popup), then
+        `console` (state, title, lines) as a dark box with the output of a running update,
+        console-style."""
         m, h, gap = self._corner_metrics()
         max_w = region.width - m - gap
         font = self.fonts.get("medium", h * 0.44)
         pad = int(h * 0.45)
         y = m
+        if stats:
+            icon_s = int(h * 0.48)
+            icon_gap = max(2, int(h * 0.14))  # icon -> its value
+            item_gap = int(h * 0.42)  # value -> next icon
+            widths = [icon_s + icon_gap + math.ceil(font.getlength(v)) for _, v in stats]
+            # Leave items out from the end rather than cut a number in half.
+            while len(widths) > 1 and 2 * pad + sum(widths) + item_gap * (len(widths) - 1) > max_w:
+                widths.pop()
+            w = min(max_w, 2 * pad + sum(widths) + item_gap * (len(widths) - 1))
+            shape = rounded_mask((w, h), h // 2).point(lambda v: v * PILL_ALPHA // 255)
+            region.paste((0, 0, 0), (m, y), shape)
+            x = m + pad
+            for (kind, value), iw in zip(stats, widths, strict=False):
+                icon = stat_icon(kind, icon_s).point(lambda v: int(v * 0.92))
+                region.paste(WHITE, (x, y + (h - icon_s) // 2), icon)
+                draw_text(region, (x + icon_s + icon_gap, y + h / 2), value, font, alpha=0.92,
+                          anchor="lm")
+                x += iw + item_gap
+            y += h + gap
         for text in rows:
             text = ellipsize(text, font, max_w - 2 * pad)
             w = min(max_w, math.ceil(font.getlength(text)) + 2 * pad)

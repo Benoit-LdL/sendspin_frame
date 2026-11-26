@@ -22,16 +22,26 @@ class Stats:
     cpu_pct: float | None
     ram_pct: float | None
     temp_c: float | None
+    wifi_dbm: float | None = None  # None on a wired connection
 
-    def text(self) -> str:
+    def items(self) -> tuple[tuple[str, str], ...]:
+        """(icon, value) pairs for the screen; icons: cpu, ram, temp, wifi (see renderer)."""
         parts = []
         if self.cpu_pct is not None:
-            parts.append(f"CPU {self.cpu_pct:.0f}%")
+            parts.append(("cpu", f"{self.cpu_pct:.0f}%"))
         if self.ram_pct is not None:
-            parts.append(f"RAM {self.ram_pct:.0f}%")
+            parts.append(("ram", f"{self.ram_pct:.0f}%"))
         if self.temp_c is not None:
-            parts.append(f"{self.temp_c:.0f}°C")
-        return "   ".join(parts)
+            parts.append(("temp", f"{self.temp_c:.0f}°C"))
+        if self.wifi_dbm is not None:
+            parts.append(("wifi", f"{wifi_quality(self.wifi_dbm)}%"))
+        return tuple(parts)
+
+
+def wifi_quality(dbm: float) -> int:
+    """Signal level as a 0-100 % quality, the usual way: -100 dBm = 0 %, -50 dBm or better =
+    100 %."""
+    return max(0, min(100, round(2 * (dbm + 100))))
 
 
 class StatsReader:
@@ -86,7 +96,7 @@ class StatsReader:
             return None
 
     def read(self) -> Stats:
-        return Stats(self._cpu(), self._ram(), self._temp())
+        return Stats(self._cpu(), self._ram(), self._temp(), self._wifi_dbm(self._interface()))
 
     # ------------------------------------------------------------------ for Home Assistant
 
